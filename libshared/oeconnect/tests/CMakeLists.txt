@@ -23,3 +23,16 @@ gtest_discover_tests(oec_tests)
 
 add_executable(oec_stress_ringbuf stress_ringbuf.cc)
 target_link_libraries(oec_stress_ringbuf PRIVATE oeconnect)
+
+if(WIN32 AND OEC_BUILD_SHARED)
+  # Copy liboeconnect runtime next to the test binary so gtest_discover_tests
+  # (which runs the binary at build time on Windows) finds the DLL.
+  add_custom_command(TARGET oec_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:oeconnect> $<TARGET_FILE_DIR:oec_tests>
+  )
+  add_custom_command(TARGET oec_stress_ringbuf POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:oeconnect> $<TARGET_FILE_DIR:oec_stress_ringbuf>
+  )
+endif()
