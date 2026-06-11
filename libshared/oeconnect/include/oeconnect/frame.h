@@ -4,13 +4,6 @@
 
 #include "oeconnect/types.h"
 
-/* Portable static assert: C11 _Static_assert / C++11 static_assert */
-#if defined(__cplusplus)
-  #define OEC_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
-#else
-  #define OEC_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif

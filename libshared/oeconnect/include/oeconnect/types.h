@@ -26,6 +26,14 @@
   #define OEC_ALIGNAS(n) __attribute__((aligned(n)))
 #endif
 
+/* C/C++ portability shim for compile-time assertions.
+ * C11 has `_Static_assert`, C++11+ has `static_assert` — pick the right one. */
+#ifdef __cplusplus
+  #define OEC_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#else
+  #define OEC_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
