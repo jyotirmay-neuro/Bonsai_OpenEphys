@@ -1,11 +1,10 @@
+# Tooling caches
 .code-graph/
 .superpowers/
 
 # Build artifacts
 build/
 out/
-bin/
-obj/
 *.o
 *.obj
 *.dll
@@ -20,8 +19,9 @@ obj/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
-Makefile
-*.cmake
+CTestTestfile.cmake
+CPackConfig.cmake
+build/Makefile
 
 # .NET
 [Dd]ebug/
@@ -44,5 +44,5 @@ oeconnect/sessions/
 Thumbs.db
 desktop.ini
 
-# Build outputs (do NOT ignore .superpowers/ — kept by .gitignore already)
+# CI artifact staging
 artifacts/
