@@ -1,0 +1,48 @@
+.code-graph/
+.superpowers/
+
+# Build artifacts
+build/
+out/
+bin/
+obj/
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+*.lib
+*.pdb
+*.exp
+*.exe
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.cmake
+
+# .NET
+[Dd]ebug/
+[Rr]elease/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+project.lock.json
+.vs/
+.idea/
+*.csproj.user
+TestResults/
+
+# Runtime sidecar files
+oeconnect/sessions/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build outputs (do NOT ignore .superpowers/ — kept by .gitignore already)
+artifacts/
