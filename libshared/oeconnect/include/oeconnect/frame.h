@@ -4,6 +4,13 @@
 
 #include "oeconnect/types.h"
 
+/* Portable static assert: C11 _Static_assert / C++11 static_assert */
+#if defined(__cplusplus)
+  #define OEC_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#else
+  #define OEC_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -24,8 +31,8 @@ typedef struct oec_frame_header {
 #pragma pack(pop)
 
 /* sizeof must be exactly 32 bytes — static_assert in C11. */
-_Static_assert(sizeof(oec_frame_header_t) == 32,
-               "oec_frame_header must be 32 bytes packed");
+OEC_STATIC_ASSERT(sizeof(oec_frame_header_t) == 32,
+                  "oec_frame_header must be 32 bytes packed");
 
 /* Frame flags */
 #define OEC_FLAG_CONTINUATION 0x0001u
@@ -52,8 +59,8 @@ typedef struct oec_block_subheader {
 } oec_block_subheader_t;
 #pragma pack(pop)
 
-_Static_assert(sizeof(oec_block_subheader_t) == 8,
-               "oec_block_subheader must be 8 bytes packed");
+OEC_STATIC_ASSERT(sizeof(oec_block_subheader_t) == 8,
+                  "oec_block_subheader must be 8 bytes packed");
 
 #define OEC_DTYPE_INT16   0
 #define OEC_DTYPE_FLOAT32 1
