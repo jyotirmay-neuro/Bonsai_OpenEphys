@@ -1,0 +1,24 @@
+name: package-bonsai
+
+on:
+  push:
+    paths: ['package-bonsai/**', 'libshared/**', 'spec/**', '.github/workflows/package-bonsai.yml']
+  pull_request:
+    paths: ['package-bonsai/**', 'libshared/**', 'spec/**', '.github/workflows/package-bonsai.yml']
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            6.0.x
+            8.0.x
+      - name: Restore
+        run: dotnet restore package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.sln
+      - name: Build
+        run: dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.sln -c Release --no-restore
+      - name: Test
+        run: dotnet test package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.sln -c Release --no-build --verbosity normal

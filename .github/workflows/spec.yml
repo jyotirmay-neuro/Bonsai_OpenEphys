@@ -1,0 +1,29 @@
+name: spec
+
+on:
+  pull_request:
+    paths: ['spec/**']
+
+jobs:
+  enforce-version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for protocol version bump
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          if git diff --quiet "$BASE" "$HEAD" -- spec/oec-protocol-v1.md; then
+            echo "No spec changes — nothing to enforce."
+            exit 0
+          fi
+          # If §2 (Frame) or §3 (Stream IDs) changed, require a version-line bump in §1.
+          if git diff "$BASE" "$HEAD" -- spec/oec-protocol-v1.md | grep -E '^\+.*(struct oec_frame_header|Stream IDs|cmd_id|stream_id)'; then
+            if ! git diff "$BASE" "$HEAD" -- spec/oec-protocol-v1.md | grep -E '^\+.*(Wire frame .version_major|Wire frame .version_minor)'; then
+              echo "::error::Frame layout / stream IDs changed without bumping version in §1."
+              exit 1
+            fi
+          fi

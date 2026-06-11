@@ -1,0 +1,24 @@
+name: libshared
+
+on:
+  push:
+    paths: ['libshared/**', 'spec/**', '.github/workflows/libshared.yml']
+  pull_request:
+    paths: ['libshared/**', 'spec/**', '.github/workflows/libshared.yml']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        config: [Debug, Release]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S libshared/oeconnect -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DOEC_BUILD_TESTS=ON
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }} --parallel
+      - name: Test
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
