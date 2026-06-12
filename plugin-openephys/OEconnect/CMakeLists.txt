@@ -5,13 +5,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(OEC_PLUGIN_BUILD_TESTS "Build OEconnect plugin unit tests" ON)
+option(OEC_PLUGIN_BUILD_TESTS  "Build OEconnect plugin unit tests" ON)
+option(OEC_PLUGIN_BUILD_BUNDLE "Build OEconnect JUCE plugin bundle (requires all Source/*.cpp)" OFF)
 
 # --- liboeconnect (sibling) ---
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../libshared/oeconnect
                  ${CMAKE_CURRENT_BINARY_DIR}/liboeconnect)
 
 # --- libzmq + cppzmq via FetchContent ---
+# libzmq v4.3.5 declares cmake_minimum_required < 3.5; CMake 4 needs explicit policy floor.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 include(FetchContent)
 set(ZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(WITH_PERF_TOOL OFF CACHE BOOL "" FORCE)
@@ -38,33 +41,35 @@ if(NOT OEPLUGIN_FOUND)
     "Submodule init required: git submodule update --init --recursive")
 endif()
 
-set(OEC_PLUGIN_SOURCES
-  Source/OEconnectProcessor.cpp
-  Source/OEconnectEditor.cpp
-  Source/Transport/ShmemTransport.cpp
-  Source/Transport/ZmqTransport.cpp
-  Source/Boards/RhdAcqBoardAdapter.cpp
-  Source/Boards/OnixAdapter.cpp
-  Source/Boards/NeuropixelsAdapter.cpp
-  Source/Boards/FileReaderAdapter.cpp
-  Source/Sync/DriftEmitter.cpp
-)
+if(OEC_PLUGIN_BUILD_BUNDLE)
+  set(OEC_PLUGIN_SOURCES
+    Source/OEconnectProcessor.cpp
+    Source/OEconnectEditor.cpp
+    Source/Transport/ShmemTransport.cpp
+    Source/Transport/ZmqTransport.cpp
+    Source/Boards/RhdAcqBoardAdapter.cpp
+    Source/Boards/OnixAdapter.cpp
+    Source/Boards/NeuropixelsAdapter.cpp
+    Source/Boards/FileReaderAdapter.cpp
+    Source/Sync/DriftEmitter.cpp
+  )
 
-add_library(OEconnect MODULE ${OEC_PLUGIN_SOURCES})
-target_include_directories(OEconnect
-  PRIVATE Source
-          ${GUI_BASE_DIR}/Source/Plugins
-          ${GUI_BASE_DIR}/JuceLibraryCode
-)
-target_link_libraries(OEconnect
-  PRIVATE oeconnect libzmq-static cppzmq
-)
-set_target_properties(OEconnect PROPERTIES
-  PREFIX ""
-  BUNDLE TRUE
-  BUNDLE_EXTENSION "bundle"
-  OUTPUT_NAME "OEconnect"
-)
+  add_library(OEconnect MODULE ${OEC_PLUGIN_SOURCES})
+  target_include_directories(OEconnect
+    PRIVATE Source
+            ${GUI_BASE_DIR}/Source/Plugins
+            ${GUI_BASE_DIR}/JuceLibraryCode
+  )
+  target_link_libraries(OEconnect
+    PRIVATE oeconnect libzmq-static cppzmq
+  )
+  set_target_properties(OEconnect PROPERTIES
+    PREFIX ""
+    BUNDLE TRUE
+    BUNDLE_EXTENSION "bundle"
+    OUTPUT_NAME "OEconnect"
+  )
+endif()
 
 if(OEC_PLUGIN_BUILD_TESTS)
   enable_testing()
