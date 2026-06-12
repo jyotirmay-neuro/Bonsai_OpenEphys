@@ -16,6 +16,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Bonsai.OEconnect.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Bonsai.Core" Version="2.8.0" />
     <PackageReference Include="Bonsai.Dsp" Version="2.8.0" />
     <PackageReference Include="NetMQ" Version="4.0.1.13" />
@@ -25,20 +29,26 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\..\..\libshared\oeconnect\build\liboeconnect.dll"
+    <!-- Native runtimes. Windows cmake outputs <BuildDir>/Release/oeconnect.dll
+         (no 'lib' prefix); POSIX outputs liboeconnect.so / .dylib at the root
+         build dir. -->
+    <None Include="..\..\..\..\libshared\oeconnect\build\Release\oeconnect.dll"
           Pack="true"
-          PackagePath="runtimes/win-x64/native/liboeconnect.dll"
+          PackagePath="runtimes/win-x64/native/oeconnect.dll"
           CopyToOutputDirectory="PreserveNewest"
-          Condition="Exists('..\..\..\..\libshared\oeconnect\build\liboeconnect.dll')" />
+          Visible="false"
+          Condition="Exists('..\..\..\..\libshared\oeconnect\build\Release\oeconnect.dll')" />
     <None Include="..\..\..\..\libshared\oeconnect\build\liboeconnect.so"
           Pack="true"
           PackagePath="runtimes/linux-x64/native/liboeconnect.so"
           CopyToOutputDirectory="PreserveNewest"
+          Visible="false"
           Condition="Exists('..\..\..\..\libshared\oeconnect\build\liboeconnect.so')" />
     <None Include="..\..\..\..\libshared\oeconnect\build\liboeconnect.dylib"
           Pack="true"
           PackagePath="runtimes/osx-x64/native/liboeconnect.dylib"
           CopyToOutputDirectory="PreserveNewest"
+          Visible="false"
           Condition="Exists('..\..\..\..\libshared\oeconnect\build\liboeconnect.dylib')" />
   </ItemGroup>
 
