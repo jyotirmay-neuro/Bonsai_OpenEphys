@@ -13,6 +13,10 @@ add_executable(oec_plugin_tests
   test_processor_hot_path.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Transport/ShmemTransport.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Transport/ZmqTransport.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/FileReaderAdapter.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/RhdAcqBoardAdapter.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/OnixAdapter.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/NeuropixelsAdapter.cpp
 )
 target_link_libraries(oec_plugin_tests
   PRIVATE oeconnect libzmq-static cppzmq-static GTest::gtest_main
