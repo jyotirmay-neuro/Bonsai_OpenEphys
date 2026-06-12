@@ -7,7 +7,7 @@ using Bonsai.OEconnect.Transport;
 
 namespace Bonsai.OEconnect.Sessions;
 
-internal sealed class Session : IDisposable
+public sealed class Session : IDisposable
 {
     private readonly object _lock = new();
     private int _refCount;

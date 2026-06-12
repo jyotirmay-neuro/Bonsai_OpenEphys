@@ -2,7 +2,7 @@ using System;
 
 namespace Bonsai.OEconnect.Transport;
 
-internal interface ITransportClient : IDisposable
+public interface ITransportClient : IDisposable
 {
     bool Start(string endpoint);
     void Stop();
