@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Bonsai.OEconnect/Bonsai.OEconnect.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Bonsai.OEconnect.Tests/Bonsai.OEconnect.Tests.csproj" />
+  </Folder>
+</Solution>

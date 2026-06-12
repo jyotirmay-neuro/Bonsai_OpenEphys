@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net472;net6.0</TargetFrameworks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Bonsai.OEconnect</RootNamespace>
+    <AssemblyName>Bonsai.OEconnect</AssemblyName>
+
+    <PackageId>Bonsai.OEconnect</PackageId>
+    <Description>Bonsai-rx operators for OpenEphys streaming and control (OEconnect bridge).</Description>
+    <PackageTags>bonsai openephys neuroscience ephys closed-loop</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <IncludeBuildOutput>true</IncludeBuildOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Bonsai.Core" Version="2.8.0" />
+    <PackageReference Include="NetMQ" Version="4.0.1.13" />
+    <PackageReference Include="System.Memory" Version="4.5.5" Condition="'$(TargetFramework)' == 'net472'" />
+    <PackageReference Include="System.Buffers" Version="4.5.1" Condition="'$(TargetFramework)' == 'net472'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\..\..\libshared\oeconnect\build\liboeconnect.dll"
+          Pack="true"
+          PackagePath="runtimes/win-x64/native/liboeconnect.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\..\..\..\libshared\oeconnect\build\liboeconnect.dll')" />
+    <None Include="..\..\..\..\libshared\oeconnect\build\liboeconnect.so"
+          Pack="true"
+          PackagePath="runtimes/linux-x64/native/liboeconnect.so"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\..\..\..\libshared\oeconnect\build\liboeconnect.so')" />
+    <None Include="..\..\..\..\libshared\oeconnect\build\liboeconnect.dylib"
+          Pack="true"
+          PackagePath="runtimes/osx-x64/native/liboeconnect.dylib"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('..\..\..\..\libshared\oeconnect\build\liboeconnect.dylib')" />
+  </ItemGroup>
+
+</Project>
