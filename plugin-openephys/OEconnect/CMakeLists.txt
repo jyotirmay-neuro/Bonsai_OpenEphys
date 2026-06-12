@@ -43,7 +43,8 @@ endif()
 
 if(OEC_PLUGIN_BUILD_BUNDLE)
   set(OEC_PLUGIN_SOURCES
-    Source/OEconnectProcessor.cpp
+    Source/OEconnectProcessor.cpp        # pure-C++ hot path
+    Source/OEconnectJuceProcessor.cpp    # JUCE GenericProcessor wrapper
     Source/OEconnectEditor.cpp
     Source/Transport/ShmemTransport.cpp
     Source/Transport/ZmqTransport.cpp
