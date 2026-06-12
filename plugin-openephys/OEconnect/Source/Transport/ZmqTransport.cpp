@@ -1,16 +1,192 @@
 #include "ZmqTransport.h"
 
+#include <atomic>
+#include <chrono>
+#include <cstring>
+#include <deque>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+#include <zmq.hpp>
+
+extern "C" {
+#include "oeconnect/frame.h"
+}
+
 namespace oec::plugin {
-struct ZmqTransport::Impl {};
+
+namespace {
+
+constexpr size_t kRingSlots   = 1024;
+constexpr size_t kSlotBytes   = 65536;
+constexpr int    kPubHwm      = 1024;
+constexpr int    kHeartbeatMs = 500;
+
+/* Simple bounded SPSC vector ring used as the in-process audio->shipper buffer. */
+struct LocalRing {
+    std::vector<std::vector<uint8_t>> slots;
+    std::vector<uint32_t>             sizes;
+    std::atomic<size_t>               prod{0};
+    std::atomic<size_t>               cons{0};
+    explicit LocalRing(size_t n_slots, size_t slot_bytes)
+        : slots(n_slots), sizes(n_slots, 0)
+    {
+        for (auto& s : slots) s.resize(slot_bytes);
+    }
+    uint8_t* acquire(uint32_t* cap, bool dropOldest, uint64_t* dropped) {
+        size_t p = prod.load(std::memory_order_relaxed);
+        size_t c = cons.load(std::memory_order_acquire);
+        if (p - c >= slots.size()) {
+            if (!dropOldest) return nullptr;
+            cons.store(c + 1, std::memory_order_release);
+            ++(*dropped);
+            c = c + 1;
+        }
+        size_t i = p % slots.size();
+        if (cap) *cap = (uint32_t)slots[i].size();
+        return slots[i].data();
+    }
+    void publish(uint32_t bytes) {
+        size_t p = prod.load(std::memory_order_relaxed);
+        sizes[p % slots.size()] = bytes;
+        prod.store(p + 1, std::memory_order_release);
+    }
+    bool peek(const uint8_t** out, uint32_t* out_sz) {
+        size_t c = cons.load(std::memory_order_relaxed);
+        size_t p = prod.load(std::memory_order_acquire);
+        if (c == p) return false;
+        size_t i = c % slots.size();
+        *out = slots[i].data();
+        *out_sz = sizes[i];
+        return true;
+    }
+    void consume_one() {
+        size_t c = cons.load(std::memory_order_relaxed);
+        cons.store(c + 1, std::memory_order_release);
+    }
+};
+
+}  // namespace
+
+struct ZmqTransport::Impl {
+    zmq::context_t ctx{1};
+    zmq::socket_t  pub{ctx, zmq::socket_type::pub};
+    zmq::socket_t  rep{ctx, zmq::socket_type::rep};
+
+    LocalRing data{kRingSlots, kSlotBytes};
+    LocalRing ack {64,          kSlotBytes};
+
+    /* Cmd buffer drained by audio thread. */
+    std::mutex             cmd_mutex;
+    std::deque<std::vector<uint8_t>> cmd_q;
+
+    /* Last peeked cmd pointer for audio thread (peekCmd/consumeCmd are paired). */
+    std::vector<uint8_t> audio_thread_cmd_copy;
+
+    /* REP socket is stateful; track whether a req is outstanding awaiting reply. */
+    bool req_pending = false;
+};
+
 ZmqTransport::ZmqTransport() : impl_(std::make_unique<Impl>()) {}
-ZmqTransport::~ZmqTransport() = default;
-bool ZmqTransport::start(const std::string&) { return false; }
-void ZmqTransport::stop() {}
-uint8_t* ZmqTransport::acquireDataSlot(uint32_t*, bool) { return nullptr; }
-void ZmqTransport::publishData(uint32_t) {}
-uint8_t* ZmqTransport::acquireAckSlot(uint32_t*) { return nullptr; }
-void ZmqTransport::publishAck(uint32_t) {}
-const uint8_t* ZmqTransport::peekCmd(uint32_t*) { return nullptr; }
-void ZmqTransport::consumeCmd() {}
-void ZmqTransport::shipperLoop() {}
+ZmqTransport::~ZmqTransport() { stop(); }
+
+bool ZmqTransport::start(const std::string& endpoint_pair) {
+    stop();
+    auto sep = endpoint_pair.find('|');
+    if (sep == std::string::npos) return false;
+    const std::string pub_ep = endpoint_pair.substr(0, sep);
+    const std::string rep_ep = endpoint_pair.substr(sep + 1);
+
+    try {
+        impl_->pub.set(zmq::sockopt::sndhwm, kPubHwm);
+        impl_->pub.bind(pub_ep);
+        impl_->rep.set(zmq::sockopt::heartbeat_ivl, kHeartbeatMs);
+        impl_->rep.set(zmq::sockopt::heartbeat_timeout, 2000);
+        impl_->rep.bind(rep_ep);
+    } catch (const zmq::error_t&) {
+        return false;
+    }
+    running_.store(true, std::memory_order_release);
+    shipper_ = std::thread(&ZmqTransport::shipperLoop, this);
+    return true;
+}
+
+void ZmqTransport::stop() {
+    if (running_.exchange(false, std::memory_order_acq_rel)) {
+        if (shipper_.joinable()) shipper_.join();
+    }
+}
+
+uint8_t* ZmqTransport::acquireDataSlot(uint32_t* out_cap, bool dropOldest) {
+    return impl_->data.acquire(out_cap, dropOldest, &dropped_);
+}
+void ZmqTransport::publishData(uint32_t bytes_written) {
+    impl_->data.publish(bytes_written);
+}
+uint8_t* ZmqTransport::acquireAckSlot(uint32_t* out_cap) {
+    uint64_t ignored = 0;
+    return impl_->ack.acquire(out_cap, /*dropOldest=*/false, &ignored);
+}
+void ZmqTransport::publishAck(uint32_t bytes_written) {
+    impl_->ack.publish(bytes_written);
+}
+
+const uint8_t* ZmqTransport::peekCmd(uint32_t* out_size) {
+    std::lock_guard<std::mutex> lk(impl_->cmd_mutex);
+    if (impl_->cmd_q.empty()) return nullptr;
+    impl_->audio_thread_cmd_copy = impl_->cmd_q.front();
+    if (out_size) *out_size = (uint32_t)impl_->audio_thread_cmd_copy.size();
+    return impl_->audio_thread_cmd_copy.data();
+}
+void ZmqTransport::consumeCmd() {
+    std::lock_guard<std::mutex> lk(impl_->cmd_mutex);
+    if (!impl_->cmd_q.empty()) impl_->cmd_q.pop_front();
+}
+
+void ZmqTransport::shipperLoop() {
+    using namespace std::chrono_literals;
+    zmq::pollitem_t items[] = {
+        { impl_->rep.handle(), 0, ZMQ_POLLIN, 0 }
+    };
+
+    while (running_.load(std::memory_order_acquire)) {
+        /* Drain data ring -> PUB */
+        const uint8_t* slot = nullptr;
+        uint32_t sz = 0;
+        while (impl_->data.peek(&slot, &sz)) {
+            const auto* h = reinterpret_cast<const oec_frame_header_t*>(slot);
+            uint16_t topic = h->stream_id;
+            impl_->pub.send(zmq::buffer(&topic, sizeof(topic)), zmq::send_flags::sndmore);
+            impl_->pub.send(zmq::buffer(slot, sz), zmq::send_flags::none);
+            impl_->data.consume_one();
+        }
+
+        /* Drain ack ring -> REP reply (if a request is outstanding) */
+        const uint8_t* aslot = nullptr;
+        uint32_t asz = 0;
+        if (impl_->req_pending && impl_->ack.peek(&aslot, &asz)) {
+            impl_->rep.send(zmq::buffer(aslot, asz), zmq::send_flags::none);
+            impl_->ack.consume_one();
+            impl_->req_pending = false;
+        }
+
+        /* Poll REP for incoming CMD */
+        zmq::poll(items, 1, std::chrono::milliseconds(5));
+        if (items[0].revents & ZMQ_POLLIN) {
+            zmq::message_t msg;
+            auto r = impl_->rep.recv(msg, zmq::recv_flags::dontwait);
+            if (r && msg.size() >= sizeof(oec_frame_header_t)) {
+                std::vector<uint8_t> copy(msg.size());
+                std::memcpy(copy.data(), msg.data(), msg.size());
+                {
+                    std::lock_guard<std::mutex> lk(impl_->cmd_mutex);
+                    impl_->cmd_q.push_back(std::move(copy));
+                }
+                impl_->req_pending = true;
+            }
+        }
+    }
+}
+
 }  // namespace oec::plugin
