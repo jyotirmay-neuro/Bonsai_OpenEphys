@@ -11,6 +11,7 @@ add_executable(oec_plugin_tests
   test_shmem_transport.cc
   test_zmq_transport.cc
   test_processor_hot_path.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Transport/ShmemTransport.cpp
 )
 target_link_libraries(oec_plugin_tests
   PRIVATE oeconnect libzmq-static cppzmq-static GTest::gtest_main
@@ -18,5 +19,14 @@ target_link_libraries(oec_plugin_tests
 target_include_directories(oec_plugin_tests
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Source
 )
+if(WIN32 AND TARGET oeconnect)
+  # Copy liboeconnect runtime next to the test exe so gtest_discover_tests
+  # (which runs the binary post-build on Windows) finds the DLL.
+  add_custom_command(TARGET oec_plugin_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:oeconnect> $<TARGET_FILE_DIR:oec_plugin_tests>
+  )
+endif()
+
 include(GoogleTest)
 gtest_discover_tests(oec_plugin_tests)
