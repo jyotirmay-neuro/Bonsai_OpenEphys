@@ -1,0 +1,3 @@
+[submodule "plugin-openephys/OEconnect/external/plugin-GUI"]
+	path = plugin-openephys/OEconnect/external/plugin-GUI
+	url = https://github.com/open-ephys/plugin-GUI
