@@ -13,7 +13,7 @@ add_executable(oec_plugin_tests
   test_processor_hot_path.cc
 )
 target_link_libraries(oec_plugin_tests
-  PRIVATE oeconnect libzmq-static cppzmq GTest::gtest_main
+  PRIVATE oeconnect libzmq-static cppzmq-static GTest::gtest_main
 )
 target_include_directories(oec_plugin_tests
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Source
