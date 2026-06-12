@@ -83,6 +83,33 @@ bool OEconnectJuceProcessor::startAcquisition() {
         (void)this; (void)line; (void)edge;
     };
 
+    slow_worker_ = std::make_unique<SlowCmdWorker>(outbox_,
+        [this](const SlowCmdRequest& req) -> uint16_t {
+            switch (req.cmd_id) {
+                case OEC_CMD_START_RECORD:
+                    CoreServices::setRecordingDirectory(juce::String(req.arg1));
+                    /* TODO(impl): the CoreServices method for the file-name
+                       prefix varies across plugin-GUI minor versions.
+                       Look in external/plugin-GUI/Source/CoreServices.h for
+                       the current API and forward req.arg2 to it. */
+                    CoreServices::setRecordingStatus(true);
+                    return OEC_ACK_COMPLETED;
+                case OEC_CMD_STOP_RECORD:
+                    CoreServices::setRecordingStatus(false);
+                    return OEC_ACK_COMPLETED;
+                case OEC_CMD_START_ACQ:
+                    CoreServices::setAcquisitionStatus(true);
+                    return OEC_ACK_COMPLETED;
+                case OEC_CMD_STOP_ACQ:
+                    CoreServices::setAcquisitionStatus(false);
+                    return OEC_ACK_COMPLETED;
+                default:
+                    return OEC_ACK_NOT_SUPPORTED;
+            }
+        });
+    slow_worker_->start();
+    cfg_.slow_enqueue = [this](SlowCmdRequest r) { slow_worker_->enqueue(std::move(r)); };
+
     /* Write sidecar JSON */
     oec_sidecar_t s{};
     s.pid = (int)getpid();
@@ -94,6 +121,7 @@ bool OEconnectJuceProcessor::startAcquisition() {
 }
 
 bool OEconnectJuceProcessor::stopAcquisition() {
+    if (slow_worker_) slow_worker_->stop();
     if (drift_emitter_) drift_emitter_->stop();
     if (board_) board_->onStopAcquisition();
     if (transport_) transport_->stop();

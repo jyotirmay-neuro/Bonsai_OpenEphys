@@ -53,6 +53,7 @@ if(OEC_PLUGIN_BUILD_BUNDLE)
     Source/Boards/NeuropixelsAdapter.cpp
     Source/Boards/FileReaderAdapter.cpp
     Source/Sync/DriftEmitter.cpp
+    Source/Util/SlowCmdWorker.cpp
   )
 
   add_library(OEconnect MODULE ${OEC_PLUGIN_SOURCES})

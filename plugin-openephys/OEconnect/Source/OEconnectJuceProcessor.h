@@ -9,6 +9,7 @@
  */
 
 #include "OEconnectProcessor.h"
+#include "Util/SlowCmdWorker.h"
 #include <ProcessorHeaders.h>            /* from external/plugin-GUI */
 
 namespace oec::plugin {
@@ -42,6 +43,7 @@ private:
     std::unique_ptr<ITransport>     transport_;
     std::unique_ptr<IBoardAdapter>  board_;
     std::unique_ptr<DriftEmitter>   drift_emitter_;
+    std::unique_ptr<SlowCmdWorker>  slow_worker_;
     AckOutbox                       outbox_{1024};
     std::atomic<uint64_t>           sample_counter_{0};
     std::vector<int16_t>            scratch_;

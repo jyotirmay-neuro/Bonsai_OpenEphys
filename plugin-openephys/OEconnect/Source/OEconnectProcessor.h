@@ -12,6 +12,8 @@
 
 namespace oec::plugin {
 
+struct SlowCmdRequest;   /* fwd; full def in Util/SlowCmdWorker.h */
+
 /**
  * Processor configuration owned by the editor (UI).
  */
@@ -32,6 +34,10 @@ struct ProcessorConfig {
      *  Node captures the same edge. Leave null in unit tests. */
     std::function<void(uint8_t line, uint8_t edge, uint64_t sample_index)>
         on_ttl_emit;
+
+    /** Forward slow commands (START/STOP record/acq) to a worker thread.
+     *  Wait-free push; worker emits ACK(COMPLETED) via the AckOutbox. */
+    std::function<void(SlowCmdRequest)> slow_enqueue;
 };
 
 /**

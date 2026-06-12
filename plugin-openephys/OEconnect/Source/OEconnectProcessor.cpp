@@ -1,5 +1,6 @@
 #include "OEconnectProcessor.h"
 #include "Transport/Frame.h"
+#include "Util/SlowCmdWorker.h"
 
 #include <cstring>
 
@@ -108,11 +109,26 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cf
             case OEC_CMD_START_RECORD:
             case OEC_CMD_STOP_RECORD:
             case OEC_CMD_START_ACQ:
-            case OEC_CMD_STOP_ACQ:
-                /* Slow commands - emit PENDING; real worker thread completes later. */
+            case OEC_CMD_STOP_ACQ: {
+                SlowCmdRequest req;
+                req.cmd_id = cmd_id;
+                req.cookie = cookie;
+                if (cmd_id == OEC_CMD_START_RECORD &&
+                    sz >= sizeof(oec_frame_header_t) + 6 + 4)
+                {
+                    const uint8_t* p = body + 6;
+                    uint16_t dlen = 0;
+                    std::memcpy(&dlen, p, 2);
+                    req.arg1.assign((const char*)(p + 2), dlen);
+                    const uint8_t* p2 = p + 2 + dlen;
+                    uint16_t plen = 0;
+                    std::memcpy(&plen, p2, 2);
+                    req.arg2.assign((const char*)(p2 + 2), plen);
+                }
+                if (cfg.slow_enqueue) cfg.slow_enqueue(std::move(req));
                 emitAck(t, cookie, OEC_ACK_PENDING, 0);
-                /* TODO(impl): forward to slow-cmd worker via a message queue. */
                 break;
+            }
             default:
                 emitAck(t, cookie, OEC_ACK_NOT_SUPPORTED, 0);
                 break;
