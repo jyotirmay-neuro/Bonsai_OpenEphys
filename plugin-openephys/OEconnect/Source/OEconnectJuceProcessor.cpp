@@ -73,6 +73,16 @@ bool OEconnectJuceProcessor::startAcquisition() {
     drift_emitter_ = std::make_unique<DriftEmitter>(outbox_, sample_counter_);
     drift_emitter_->start(cfg_.sample_rate_hz);
 
+    cfg_.on_ttl_emit = [this](uint8_t line, uint8_t edge, uint64_t /*s*/) {
+        /* TODO(impl): exact addEvent() signature depends on plugin-GUI version.
+           Look in external/plugin-GUI/Source/Processors/GenericProcessor.h
+           for the current API; typical pattern:
+             addEvent(eventChannel, sample_within_block, line | (edge << 8));
+           Must remain wait-free -- OE's addEvent is a fixed-size lock-free push
+           onto the event bus. */
+        (void)this; (void)line; (void)edge;
+    };
+
     /* Write sidecar JSON */
     oec_sidecar_t s{};
     s.pid = (int)getpid();

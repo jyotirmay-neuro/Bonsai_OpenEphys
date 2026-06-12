@@ -68,7 +68,7 @@ void emitAck(ITransport& t, uint32_t cookie, uint16_t status,
     t.publishAck((uint32_t)need);
 }
 
-void drainCmdRing(ITransport& t, IBoardAdapter& board)
+void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cfg)
 {
     for (;;) {
         uint32_t sz = 0;
@@ -89,6 +89,7 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board)
                 uint8_t line = body[6];
                 uint8_t edge = body[7];
                 uint64_t s = board.setTtl(line, edge != 0);
+                if (cfg.on_ttl_emit) cfg.on_ttl_emit(line, edge, s);
                 emitAck(t, cookie, OEC_ACK_OK, s);
                 break;
             }
@@ -96,6 +97,7 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board)
                 uint8_t line = body[6];
                 uint8_t edge = body[7];
                 uint64_t s = board.setTtl(line, edge != 0);
+                if (cfg.on_ttl_emit) cfg.on_ttl_emit(line, edge, s);
                 emitAck(t, cookie, OEC_ACK_OK, s);
                 break;
             }
@@ -149,7 +151,7 @@ void processBlock(
     IBoardAdapter& board,
     AckOutbox& outbox)
 {
-    drainCmdRing(transport, board);
+    drainCmdRing(transport, board, cfg);
     drainAckOutbox(transport, outbox);
 
     if (cfg.enable_raw) {

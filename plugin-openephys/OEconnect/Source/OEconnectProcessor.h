@@ -5,6 +5,7 @@
 #include "Util/AckOutbox.h"
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -25,6 +26,12 @@ struct ProcessorConfig {
     std::string transport_mode = "Auto";           /* "Auto" | "SharedMem" | "Zmq" */
     std::string shm_name;                          /* set by start() */
     std::string zmq_endpoint = "tcp://*:5557|tcp://*:5558";
+
+    /** Called from the audio thread whenever a Bonsai-issued TTL fires.
+     *  JUCE wrapper hooks GenericProcessor::addEvent() here so OE's Record
+     *  Node captures the same edge. Leave null in unit tests. */
+    std::function<void(uint8_t line, uint8_t edge, uint64_t sample_index)>
+        on_ttl_emit;
 };
 
 /**
