@@ -9,7 +9,8 @@ option(OEC_BUILD_TESTS "Build liboeconnect tests" OFF)
 option(OEC_BUILD_SHARED "Build shared library" ON)
 
 if(MSVC)
-  add_compile_options(/W4 /WX /permissive-)
+  # /experimental:c11atomics required to enable <stdatomic.h> under /std:c11 on VS 17.5+.
+  add_compile_options(/W4 /WX /permissive- /experimental:c11atomics)
 else()
   add_compile_options(-Wall -Wextra -Werror -Wpedantic)
 endif()
