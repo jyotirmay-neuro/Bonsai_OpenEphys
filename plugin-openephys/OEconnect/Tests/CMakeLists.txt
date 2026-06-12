@@ -17,6 +17,7 @@ add_executable(oec_plugin_tests
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/RhdAcqBoardAdapter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/OnixAdapter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/NeuropixelsAdapter.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Sync/DriftEmitter.cpp
 )
 target_link_libraries(oec_plugin_tests
   PRIVATE oeconnect libzmq-static cppzmq-static GTest::gtest_main
