@@ -46,3 +46,7 @@ desktop.ini
 
 # CI artifact staging
 artifacts/
+
+# NuGet output
+package-bonsai/nupkg/
+*.nupkg
