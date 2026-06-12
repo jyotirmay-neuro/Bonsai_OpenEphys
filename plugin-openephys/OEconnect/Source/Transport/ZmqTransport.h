@@ -1,0 +1,53 @@
+#pragma once
+#include "ITransport.h"
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace oec::plugin {
+
+/**
+ * ZMQ-backed transport.
+ *
+ *   data path:  audio thread fills an internal SPSC ringbuf ->
+ *               shipper thread drains and PUBs on `tcp_pub_endpoint`.
+ *   cmd  path:  shipper thread REPs on `tcp_rep_endpoint`,
+ *               pushes CMD bytes into internal cmd queue (audio thread reads).
+ *   ack  path:  audio thread pushes ACK frames into internal ack queue ->
+ *               shipper thread matches cookies and sends REP replies.
+ */
+class ZmqTransport final : public ITransport {
+public:
+    ZmqTransport();
+    ~ZmqTransport() override;
+
+    /** endpoint format: "tcp://*:5557|tcp://*:5558" (pub|rep). */
+    bool start(const std::string& endpoint_pair) override;
+    void stop() override;
+
+    uint8_t* acquireDataSlot(uint32_t* out_cap, bool dropOldest) override;
+    void publishData(uint32_t bytes_written) override;
+
+    uint8_t* acquireAckSlot(uint32_t* out_cap) override;
+    void publishAck(uint32_t bytes_written) override;
+
+    const uint8_t* peekCmd(uint32_t* out_size) override;
+    void consumeCmd() override;
+
+    uint64_t totalDropped() const override { return dropped_; }
+    std::string name() const override { return "Zmq"; }
+
+private:
+    void shipperLoop();
+
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+    std::atomic<bool> running_{false};
+    std::thread shipper_;
+    uint64_t dropped_ = 0;
+};
+
+}  // namespace oec::plugin

@@ -12,6 +12,7 @@ add_executable(oec_plugin_tests
   test_zmq_transport.cc
   test_processor_hot_path.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Transport/ShmemTransport.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Transport/ZmqTransport.cpp
 )
 target_link_libraries(oec_plugin_tests
   PRIVATE oeconnect libzmq-static cppzmq-static GTest::gtest_main
