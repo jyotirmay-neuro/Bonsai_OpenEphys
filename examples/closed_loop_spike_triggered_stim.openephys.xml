@@ -1,0 +1,13 @@
+<!--
+  Example OE signal chain to pair with closed_loop_spike_triggered_stim.bonsai.
+  Load in OE GUI via File → Load Signal Chain.
+-->
+<SETTINGS>
+  <CHAIN>
+    <PROCESSOR name="Rhythm FPGA" />
+    <PROCESSOR name="Bandpass Filter" lowCut="300" highCut="6000" />
+    <PROCESSOR name="Spike Detector" threshold="-4.5sd" />
+    <PROCESSOR name="OEconnect" transport="Auto" streams="Spikes,TTL" />
+    <PROCESSOR name="Record Node" />
+  </CHAIN>
+</SETTINGS>
