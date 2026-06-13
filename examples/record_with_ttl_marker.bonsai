@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WorkflowBuilder Version="2.8.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:rx="clr-namespace:Bonsai.Reactive;assembly=Bonsai.Core"
+  xmlns:oec="clr-namespace:Bonsai.OEconnect.Operators;assembly=Bonsai.OEconnect"
+  xmlns="https://bonsai-rx.org/2018/workflow">
+  <Workflow>
+    <Nodes>
+      <Expression xsi:type="rx:Timer">
+        <Period>PT0S</Period>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="oec:StartRecording">
+          <Endpoint></Endpoint>
+          <Directory>D:\data\session</Directory>
+          <Prefix>mouse42</Prefix>
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="rx:Interval">
+        <Period>PT5S</Period>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="oec:PulseTtl">
+          <Endpoint></Endpoint>
+          <Line>0</Line>
+          <WidthMicroseconds>2000</WidthMicroseconds>
+        </Combinator>
+      </Expression>
+    </Nodes>
+    <Edges>
+      <Edge From="0" To="1" Label="Source1" />
+      <Edge From="2" To="3" Label="Source1" />
+    </Edges>
+  </Workflow>
+</WorkflowBuilder>
