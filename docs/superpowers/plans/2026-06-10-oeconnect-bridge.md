@@ -7775,9 +7775,828 @@ git commit -m "docs(perf): manual closed-loop latency verification procedure"
 
 ---
 
-## Phase 5 — Release tooling
+## Phase 5 — Protocol HELLO handshake (additive bump to v1.1)
 
-### Task 5.1: Tag-triggered release workflow
+Single-purpose phase: introduce a `HELLO` frame so producer and consumer
+announce their protocol/version up-front, making future minor bumps
+negotiable without breaking older clients.
+
+**All changes are additive.** A v1.0 producer talking to a v1.1 consumer
+(or vice versa) still interoperates because the HELLO arm is opt-in on
+both sides: v1.0 senders never emit it; v1.0 receivers route it through
+their default discard arm.
+
+### Task 5.1: Spec amendment for HELLO
+
+**Files:**
+- Modify: `spec/oec-protocol-v1.md` — bump document version to v1.1; append §11 "HELLO handshake"
+
+- [ ] **Step 1: Append §11 to the spec**
+
+Content for §11:
+- New stream id: `OEC_STREAM_HELLO = 0x0030u`.
+- Body layout (packed little-endian, 16 bytes):
+
+  ```
+  uint16 protocol_major    /* 1 */
+  uint16 protocol_minor    /* 1 in this release */
+  uint32 plugin_version    /* (major<<16) | (minor<<8) | patch */
+  uint32 lib_version       /* same packing */
+  uint32 reserved          /* zero on emit; ignored on receive */
+  ```
+
+- Timing: producer SHOULD emit one HELLO immediately after the first
+  ACK ring publish on `startAcquisition`. Consumer SHOULD treat absence
+  of HELLO within 2 s of session start as "remote is v1.0".
+- Negotiation rules:
+  - same major + same minor → silent
+  - same major + remote minor > local minor → info-log; treat reserved
+    fields as zero
+  - same major + remote minor < local minor → info-log; do not emit
+    minor-only frames the older side wouldn't understand
+  - different major → consumer raises a fatal error and stops; producer
+    logs and refuses commands
+- **Backward-compat clause:** protocol v1.0 senders that never emit
+  HELLO remain conformant. Receivers that don't recognise
+  `OEC_STREAM_HELLO` MUST route it through their default discard arm
+  (not error).
+
+- [ ] **Step 2: Commit**
+
+```powershell
+git add spec/oec-protocol-v1.md
+git commit -m "spec: v1.1 -- HELLO handshake for protocol negotiation"
+```
+
+---
+
+### Task 5.2: libshared additions
+
+**Files:**
+- Modify: `libshared/oeconnect/include/oeconnect/frame.h` — add `OEC_STREAM_HELLO`
+- Modify: `libshared/oeconnect/include/oeconnect/version.h` — `OEC_VERSION_MINOR = 1`
+- Create:  `libshared/oeconnect/include/oeconnect/hello.h`
+- Create:  `libshared/oeconnect/src/hello.c`
+- Modify: `libshared/oeconnect/CMakeLists.txt` — add `src/hello.c`
+- Modify: `libshared/oeconnect/tests/test_frame.cc` — add `Hello.PackedLayoutMatchesSpec`
+- Create:  `tests/golden/v1.0/hello.bin`
+
+- [ ] **Step 1: Add the stream id and version bump**
+
+```c
+/* frame.h */
+#define OEC_STREAM_HELLO           0x0030u
+```
+
+```c
+/* version.h */
+#define OEC_VERSION_MINOR 1
+```
+
+- [ ] **Step 2: `hello.h` — packed body + emit helper**
+
+```c
+#pragma once
+#include "oeconnect/types.h"
+#include "oeconnect/frame.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#pragma pack(push, 1)
+typedef struct oec_hello_body {
+    uint16_t protocol_major;
+    uint16_t protocol_minor;
+    uint32_t plugin_version;   /* (M<<16)|(m<<8)|p */
+    uint32_t lib_version;
+    uint32_t reserved;
+} oec_hello_body_t;
+#pragma pack(pop)
+
+OEC_STATIC_ASSERT(sizeof(oec_hello_body_t) == 16,
+                  "HELLO body must be 16 bytes (spec v1.1 §11)");
+
+/* Writes header+body into dest. Returns bytes written, or 0 if cap is too small. */
+OEC_API size_t oec_hello_emit(uint8_t *dest, size_t cap,
+                              uint32_t plugin_version,
+                              uint32_t lib_version);
+
+#ifdef __cplusplus
+}
+#endif
+```
+
+- [ ] **Step 3: `hello.c` — implementation reuses `oec_frame_init`**
+
+```c
+#include "oeconnect/hello.h"
+#include <string.h>
+
+size_t oec_hello_emit(uint8_t *dest, size_t cap,
+                      uint32_t plugin_version, uint32_t lib_version) {
+    const size_t total = sizeof(oec_frame_header_t) + sizeof(oec_hello_body_t);
+    if (cap < total) return 0;
+    oec_frame_init((oec_frame_header_t *)dest, OEC_STREAM_HELLO,
+                   (uint32_t)sizeof(oec_hello_body_t), 0, 0, 0);
+    oec_hello_body_t body;
+    body.protocol_major = OEC_VERSION_MAJOR;
+    body.protocol_minor = OEC_VERSION_MINOR;
+    body.plugin_version = plugin_version;
+    body.lib_version    = lib_version;
+    body.reserved       = 0;
+    memcpy(dest + sizeof(oec_frame_header_t), &body, sizeof(body));
+    return total;
+}
+```
+
+- [ ] **Step 4: gtest covers layout + helper**
+
+```cpp
+TEST(Hello, PackedLayoutMatchesSpec) {
+    EXPECT_EQ(sizeof(oec_hello_body_t), 16u);
+    uint8_t buf[64] = {0};
+    size_t n = oec_hello_emit(buf, sizeof(buf), 0x01000200u, 0x01010000u);
+    ASSERT_EQ(n, sizeof(oec_frame_header_t) + 16);
+    const oec_frame_header_t *h = (const oec_frame_header_t *)buf;
+    EXPECT_EQ(h->stream_id, OEC_STREAM_HELLO);
+    const oec_hello_body_t *b = (const oec_hello_body_t *)(buf + sizeof(*h));
+    EXPECT_EQ(b->protocol_major, 1u);
+    EXPECT_EQ(b->protocol_minor, 1u);
+    EXPECT_EQ(b->plugin_version, 0x01000200u);
+    EXPECT_EQ(b->lib_version,    0x01010000u);
+}
+
+TEST(Hello, MatchesGoldenCorpus) {
+    /* Read tests/golden/v1.0/hello.bin and assert byte-equality with a fresh emit. */
+    /* Path resolution handled by a shared GoldenCorpusFixture helper. */
+}
+```
+
+- [ ] **Step 5: Generate the golden corpus file once**
+
+Run a one-shot encoder (committed under `tests/golden/v1.0/regen_hello.cc`)
+that emits the canonical HELLO bytes for `plugin_version=0x01000000`,
+`lib_version=0x01010000` and writes them to `hello.bin`. Future intentional
+changes regenerate this file in the same commit that bumps
+`OEC_VERSION_MINOR`/`MAJOR`.
+
+- [ ] **Step 6: Build, test, commit**
+
+```powershell
+cmake --build build-libshared --config Debug
+ctest --test-dir build-libshared -R Hello --output-on-failure
+git add libshared/oeconnect/include/oeconnect/frame.h `
+        libshared/oeconnect/include/oeconnect/version.h `
+        libshared/oeconnect/include/oeconnect/hello.h `
+        libshared/oeconnect/src/hello.c `
+        libshared/oeconnect/CMakeLists.txt `
+        libshared/oeconnect/tests/test_frame.cc `
+        tests/golden/v1.0/hello.bin `
+        tests/golden/v1.0/regen_hello.cc
+git commit -m "feat(libshared): OEC_STREAM_HELLO frame + emitter (protocol v1.1)"
+```
+
+---
+
+### Task 5.3: Plugin emits HELLO at startAcquisition
+
+**Files:**
+- Modify: `plugin-openephys/OEconnect/CMakeLists.txt` — define `OEC_PLUGIN_VERSION_*`
+- Modify: `plugin-openephys/OEconnect/Source/OEconnectJuceProcessor.cpp`
+
+- [ ] **Step 1: Define plugin version macros at configure time**
+
+```cmake
+target_compile_definitions(OEconnect PRIVATE
+  OEC_PLUGIN_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+  OEC_PLUGIN_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+  OEC_PLUGIN_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+)
+```
+
+- [ ] **Step 2: Emit HELLO once in `startAcquisition`**
+
+```cpp
+/* In OEconnectJuceProcessor::startAcquisition, after transport_->start
+   succeeds and before drift_emitter_->start: */
+#include "oeconnect/hello.h"
+
+uint32_t acap = 0;
+uint8_t* aslot = transport_->acquireAckSlot(&acap);
+if (aslot) {
+    const uint32_t plugin_ver =
+        (OEC_PLUGIN_VERSION_MAJOR << 16) |
+        (OEC_PLUGIN_VERSION_MINOR << 8)  |
+        (OEC_PLUGIN_VERSION_PATCH);
+    const uint32_t lib_ver =
+        (OEC_LIB_VERSION_MAJOR << 16) |
+        (OEC_LIB_VERSION_MINOR << 8)  |
+        (OEC_LIB_VERSION_PATCH);
+    size_t n = oec_hello_emit(aslot, acap, plugin_ver, lib_ver);
+    if (n > 0) transport_->publishAck((uint32_t)n);
+}
+```
+
+- [ ] **Step 3: Commit**
+
+```powershell
+git add plugin-openephys/OEconnect/CMakeLists.txt `
+        plugin-openephys/OEconnect/Source/OEconnectJuceProcessor.cpp
+git commit -m "feat(plugin): emit OEC_STREAM_HELLO once at startAcquisition"
+```
+
+---
+
+### Task 5.4: Bonsai consumes HELLO + SessionStatus exposes negotiated version
+
+**Files:**
+- Modify: `package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Interop/NativeStructs.cs` — add `OecStreams.Hello = 0x0030`
+- Modify: `package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Data/SessionStatus.cs`
+- Modify: `package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Sessions/Session.cs`
+
+- [ ] **Step 1: New fields on `SessionStatus`**
+
+```csharp
+public ushort RemoteProtocolMajor { get; init; }
+public ushort RemoteProtocolMinor { get; init; }
+public uint   RemotePluginVersion { get; init; }
+public uint   RemoteLibVersion    { get; init; }
+public bool   ProtocolNegotiated  { get; init; }
+```
+
+- [ ] **Step 2: Track negotiation in `Session`**
+
+```csharp
+public ushort RemoteMajor; public ushort RemoteMinor;
+public uint   RemotePluginVer; public uint RemoteLibVer;
+public bool   Negotiated;
+private readonly DateTime _startedAt = DateTime.UtcNow;
+private bool _v10FallbackLogged;
+```
+
+- [ ] **Step 3: Add HELLO arm to `ReaderLoop` switch**
+
+```csharp
+case OecStreams.Hello:
+    if (span.Length >= sizeof(OecFrameHeader) + 16) {
+        var body = MemoryMarshal.Read<OecHelloBody>(
+            span.Slice(sizeof(OecFrameHeader), 16));
+        RemoteMajor = body.ProtocolMajor;
+        RemoteMinor = body.ProtocolMinor;
+        RemotePluginVer = body.PluginVersion;
+        RemoteLibVer    = body.LibVersion;
+        Negotiated = true;
+        if (RemoteMajor != 1) {
+            RawSubject.OnError(new Data.OpenEphysConnectionException(
+                Transport.Name, Endpoint, 0,
+                $"OE plugin emits protocol v{RemoteMajor}.{RemoteMinor}; " +
+                $"this Bonsai package requires v1.x."));
+            return;
+        }
+    }
+    break;
+```
+
+- [ ] **Step 4: V1.0 fallback timer**
+
+Inside `ReaderLoop`, on each tick:
+
+```csharp
+if (!Negotiated && !_v10FallbackLogged &&
+    (DateTime.UtcNow - _startedAt).TotalSeconds > 2)
+{
+    /* Producer never sent HELLO; treat as protocol v1.0. */
+    RemoteMajor = 1; RemoteMinor = 0;
+    _v10FallbackLogged = true;
+    Trace.WriteLine("[OEconnect] no HELLO within 2s -- assuming protocol v1.0");
+}
+```
+
+- [ ] **Step 5: Build + commit**
+
+```powershell
+dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+git add package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/
+git commit -m "feat(bonsai): consume HELLO, surface negotiated protocol version on SessionStatus"
+```
+
+---
+
+### Task 5.5: End-to-end negotiation matrix tests
+
+**Files:**
+- Modify: `plugin-openephys/OEconnect/Tests/test_processor_hot_path.cc`
+- Modify: `package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests/InteropTests.cs`
+- Create:  `package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests/HelloNegotiationTests.cs`
+
+Test matrix (per side):
+
+| Scenario           | Local | Remote        | Expected                                                                       |
+|--------------------|-------|---------------|--------------------------------------------------------------------------------|
+| identical          | v1.1  | v1.1          | `ProtocolNegotiated=true`, no warning                                          |
+| remote newer minor | v1.1  | v1.2          | `ProtocolNegotiated=true`, one info-log                                        |
+| remote older       | v1.1  | v1.0 (no HELLO) | `ProtocolNegotiated=false` after 2 s, one info-log, **no error**             |
+| major mismatch     | v1.1  | v2.0          | `OpenEphysConnectionException` raised on `RawSubject`                          |
+
+- [ ] **Step 1: gtest fixture covers libshared decode path**
+
+Write a fake HELLO byte-blob into a synthetic ringbuf; assert
+`oec_hello_body_t` round-trips.
+
+- [ ] **Step 2: xUnit fixture covers full negotiation**
+
+The test spawns an in-process producer thread that:
+1. Creates a shmem region.
+2. (For each row) emits or omits HELLO with the configured version.
+3. Yields for ≥2.5 s if the row needs the v1.0 fallback timer.
+
+The consumer side opens a `Session` against the same region and asserts
+the expected `SessionStatus` snapshot fields.
+
+- [ ] **Step 3: Build, run, commit**
+
+```powershell
+cmake --build build-plugin --target oec_plugin_tests
+ctest --test-dir build-plugin -R Hello --output-on-failure
+
+dotnet test package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release `
+  --filter "FullyQualifiedName~HelloNegotiation"
+
+git add plugin-openephys/OEconnect/Tests/test_processor_hot_path.cc `
+        package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests/
+git commit -m "test: HELLO negotiation matrix (same/newer/older/major-mismatch)"
+```
+
+---
+
+**Phase 5 done.** Protocol bumped to v1.1 in an additive, backward-
+compatible way. Older v1.0 producers/consumers still interoperate;
+major-version mismatches surface clearly.
+
+---
+
+## Phase 6 — Release tooling + compat radar
+
+Goal: ship reproducible per-OS artifacts on tag (6.7–6.10) **and** wire
+the radar that catches breakage before users feel it (6.1–6.6).
+
+Two radars run in parallel:
+
+1. **Self-imposed drift** (6.2, 6.3, 6.4): block PRs that change a
+   versioned surface without bumping its version or updating its baseline.
+2. **Upstream drift** (6.5): nightly canary builds against tip-of-main
+   for OE plugin-GUI, Bonsai.Core, NetMQ; open `external-breakage`
+   issues automatically.
+
+Plus a runtime gate (6.6) that refuses to run against board firmware or
+SDK versions known to be incompatible — so an old rig fails loudly at
+startup rather than silently corrupting data.
+
+### Task 6.1: Compat policy doc
+
+**Files:**
+- Create: `docs/compat-policy.md`
+
+- [ ] **Step 1: Write the policy**
+
+Content outline:
+
+- **Versioned surfaces table** (one row per surface): wire protocol, C
+  ABI, Bonsai public API, OE plugin-GUI dep, Bonsai.Core dep, board
+  firmware/SDKs. Each row lists owner file, versioning scheme, and the
+  backward-compat lever (HELLO handshake, `[Obsolete]` shims, additive
+  struct fields, etc).
+- **Semver rules:**
+  - Wire protocol: `MAJOR` ⇒ different frame layout or stream id
+    semantics; requires HELLO major to bump in lock-step. `MINOR` ⇒
+    additive (new stream id, new reserved field consumed, new ACK
+    status); old peers MUST still parse via discard arm.
+  - C ABI: `MAJOR` ⇒ struct layout or function signature change.
+    `MINOR` ⇒ new exported function, new struct trailing field protected
+    by a `reserved[]` block.
+  - Bonsai package: standard NuGet semver; `MAJOR` allowed to remove
+    `[Obsolete]` types; `MINOR` only adds.
+- **Minimum supported versions** (concrete table, updated each release):
+  OE GUI `v0.5.x`+ (tested SHAs listed); Bonsai.Core `2.8.x`+; native
+  liboeconnect protocol `v1.0`+.
+- **Deprecation walkthrough:**
+  1. Mark the old member `[Obsolete("Use X. Removed in v2.0.")]`.
+  2. Append to `PublicAPI.Unshipped.txt` if .NET (Task 6.3).
+  3. Ship one minor release with both old and new.
+  4. Remove on the next major; bump `PublicAPI.Shipped.txt`.
+
+- [ ] **Step 2: Commit**
+
+```powershell
+git add docs/compat-policy.md
+git commit -m "docs(compat): version surfaces, semver rules, deprecation walkthrough"
+```
+
+---
+
+### Task 6.2: Spec + ABI drift detector (CI)
+
+**Files:**
+- Create: `ci/known-good.txt`
+- Create: `ci/check-drift.sh`
+- Create: `.github/workflows/spec-drift.yml`
+
+- [ ] **Step 1: `ci/known-good.txt` — baseline hashes for current release**
+
+One line per file, format `<sha256>  <relative-path>  <version-token>`:
+
+```
+<sha256>  spec/oec-protocol-v1.md                                  v1.1
+<sha256>  libshared/oeconnect/include/oeconnect/frame.h            v1.1
+<sha256>  libshared/oeconnect/include/oeconnect/ringbuf.h          v1.0
+<sha256>  libshared/oeconnect/include/oeconnect/shm.h              v1.0
+<sha256>  libshared/oeconnect/include/oeconnect/drift.h            v1.0
+<sha256>  libshared/oeconnect/include/oeconnect/sidecar.h          v1.0
+<sha256>  libshared/oeconnect/include/oeconnect/hello.h            v1.1
+<sha256>  libshared/oeconnect/include/oeconnect/version.h          v1.1
+```
+
+`<sha256>` is computed on the file with comments + blank lines stripped,
+so a comment-only edit doesn't trigger a false positive. The token after
+the path documents the protocol/ABI version the hash was last reconciled
+against — used for the failure message.
+
+- [ ] **Step 2: `ci/check-drift.sh`**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+fail=0
+while read -r want path token; do
+    [ -z "${want:-}" ] && continue
+    # Strip C/C++ comments and blank lines before hashing.
+    got=$(sed -E 's@/\*.*\*/@@g; s@//.*@@; /^[[:space:]]*$/d' "$path" | sha256sum | awk '{print $1}')
+    if [ "$got" != "$want" ]; then
+        echo "DRIFT: $path changed since $token"
+        echo "  expected $want"
+        echo "  got      $got"
+        echo "  action:  bump OEC_VERSION_{MAJOR,MINOR} in version.h AND update ci/known-good.txt"
+        fail=1
+    fi
+done < ci/known-good.txt
+exit $fail
+```
+
+- [ ] **Step 3: `.github/workflows/spec-drift.yml`**
+
+```yaml
+name: spec-drift
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check spec + ABI drift
+        run: bash ci/check-drift.sh
+```
+
+- [ ] **Step 4: Commit**
+
+```powershell
+git add ci/known-good.txt ci/check-drift.sh .github/workflows/spec-drift.yml
+git commit -m "ci(compat): hash-based drift detector for spec + ABI headers"
+```
+
+---
+
+### Task 6.3: Public API surface tracking (.NET)
+
+**Files:**
+- Modify: `package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj`
+- Create:  `package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/PublicAPI.Shipped.txt`
+- Create:  `package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/PublicAPI.Unshipped.txt`
+- Create:  `ci/promote-api.sh`
+
+- [ ] **Step 1: Add the analyzer**
+
+```xml
+<ItemGroup>
+  <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers"
+                    Version="3.3.4" PrivateAssets="all" />
+</ItemGroup>
+```
+
+- [ ] **Step 2: Baseline the current public surface**
+
+Initial build will emit `RS0016: Symbol ... is not part of the declared
+API` for every public type. Run once with `/p:TreatWarningsAsErrors=false`
+to enumerate, then paste the canonical declarations (sorted) into
+`PublicAPI.Shipped.txt`. `PublicAPI.Unshipped.txt` is created empty.
+
+- [ ] **Step 3: `ci/promote-api.sh` — folds Unshipped into Shipped on release**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+DIR=package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect
+cat "$DIR/PublicAPI.Shipped.txt" "$DIR/PublicAPI.Unshipped.txt" \
+    | sort -u > "$DIR/PublicAPI.Shipped.txt.new"
+mv "$DIR/PublicAPI.Shipped.txt.new" "$DIR/PublicAPI.Shipped.txt"
+: > "$DIR/PublicAPI.Unshipped.txt"
+```
+
+- [ ] **Step 4: Document the workflow**
+
+Append to `docs/compat-policy.md` (from 6.1):
+
+```markdown
+### Public API surface changes
+- Add a member → also append its canonical declaration to
+  `PublicAPI.Unshipped.txt`. CI passes.
+- Remove or rename a member → analyzer RS0017 fails the build. The fix
+  is either (a) add an `[Obsolete]` shim, or (b) make a major version
+  bump and move the line out of `PublicAPI.Shipped.txt` in the same PR.
+- Release builds move `Unshipped → Shipped` via `ci/promote-api.sh`,
+  invoked by the tag-triggered release workflow.
+```
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj `
+        package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/PublicAPI.*.txt `
+        ci/promote-api.sh docs/compat-policy.md
+git commit -m "feat(bonsai): public API surface tracking via PublicApiAnalyzers"
+```
+
+---
+
+### Task 6.4: Golden wire corpus extension (v1.0 + v1.1 frames)
+
+**Files:**
+- Create: `tests/golden/v1.0/raw_block.bin`
+- Create: `tests/golden/v1.0/ttl_event.bin`
+- Create: `tests/golden/v1.0/spike.bin`
+- Create: `tests/golden/v1.0/sync.bin`
+- Create: `tests/golden/v1.0/cmd_set_ttl.bin`
+- Create: `tests/golden/v1.0/ack_ok.bin`
+- Create: `tests/golden/v1.0/regen_all.cc`  (one-shot encoder)
+- Create: `tests/golden/v1.0/README.md`
+- Modify: `libshared/oeconnect/tests/test_frame.cc`
+- Modify: `package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests/InteropTests.cs`
+
+(`hello.bin` already added in 5.2; this task fills out the rest of the
+v1.0 stream surface.)
+
+- [ ] **Step 1: Regenerate fixture**
+
+`regen_all.cc` is a stand-alone C++ binary linked against liboeconnect
+that emits each canonical frame using fixed inputs (sample_index = 1000,
+host_qpc_ticks = 2000, line = 3, edge = 1, etc.) and writes the bytes to
+the matching `.bin`. Run it once at HEAD; commit the resulting binaries.
+Future intentional wire changes regenerate in the same commit that bumps
+`OEC_VERSION_MINOR` or `MAJOR`.
+
+- [ ] **Step 2: Add cross-runtime decode fixtures**
+
+Both gtest and xUnit harnesses define a `GoldenCorpusFixture` that:
+- Locates the corpus directory by walking up from `AppContext.BaseDirectory` (or `argv[0]`).
+- Loads each `.bin` once.
+- Asserts that the decoded `oec_frame_header_t.stream_id` matches the
+  filename and `oec_frame_validate` returns `OEC_OK`.
+- Reuses the existing parsing paths so a change in either runtime is
+  caught.
+
+- [ ] **Step 3: README explains regeneration discipline**
+
+`tests/golden/v1.0/README.md` says: "Do not edit these files manually.
+Regenerate via `regen_all.cc` only as part of a deliberate protocol
+change, and bump `OEC_VERSION_MINOR` (or `MAJOR`) + `ci/known-good.txt`
+in the same commit."
+
+- [ ] **Step 4: Build, run, commit**
+
+```powershell
+cmake --build build-libshared --target regen_all
+./build-libshared/Debug/regen_all.exe tests/golden/v1.0/
+
+ctest --test-dir build-libshared -R Golden --output-on-failure
+dotnet test package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx --filter "FullyQualifiedName~GoldenCorpus"
+
+git add tests/golden/v1.0/ libshared/oeconnect/tests/test_frame.cc `
+        package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests/InteropTests.cs
+git commit -m "test(corpus): v1.0 golden wire frames + cross-runtime decode"
+```
+
+---
+
+### Task 6.5: Upstream compat radar (nightly canaries + dependabot)
+
+**Files:**
+- Create: `.github/workflows/external-compat.yml`
+- Create: `.github/dependabot.yml`
+- Create: `ci/file-external-breakage-issue.sh`
+
+- [ ] **Step 1: `.github/dependabot.yml` (baseline)**
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: "/package-bonsai/Bonsai.OEconnect"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly }
+```
+
+Human review required — no auto-merge.
+
+- [ ] **Step 2: `.github/workflows/external-compat.yml` (nightly cron)**
+
+```yaml
+name: external-compat
+on:
+  schedule:
+    - cron: '17 4 * * *'   # 04:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues:   write
+
+jobs:
+  oe-gui-tip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Roll plugin-GUI submodule to tip of main
+        run: |
+          git -C plugin-openephys/OEconnect/external/plugin-GUI fetch origin
+          git -C plugin-openephys/OEconnect/external/plugin-GUI checkout origin/main
+      - name: Configure + build
+        id:   build
+        run:  |
+          cmake -S plugin-openephys/OEconnect -B build-plugin \
+                -DOEC_PLUGIN_BUILD_TESTS=ON -DOEC_PLUGIN_BUILD_BUNDLE=OFF
+          cmake --build build-plugin --target oec_plugin_tests --config Debug
+        continue-on-error: true
+      - name: File issue on failure
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ci/file-external-breakage-issue.sh "OE plugin-GUI tip"
+
+  bonsai-core-floating:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Float Bonsai.Core to 2.*
+        run: |
+          sed -i 's@Include="Bonsai.Core" Version="2\.[0-9.]*"@Include="Bonsai.Core" Version="2.*"@' \
+              package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj
+      - name: Restore + build + test
+        id:   build
+        run:  |
+          dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+          dotnet test  package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+        continue-on-error: true
+      - name: File issue on failure
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ci/file-external-breakage-issue.sh "Bonsai.Core floating 2.*"
+
+  netmq-floating:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Float NetMQ to *
+        run: |
+          sed -i 's@Include="NetMQ" Version="[0-9.]*"@Include="NetMQ" Version="*"@' \
+              package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj
+      - name: Restore + build + test
+        id:   build
+        run:  |
+          dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+          dotnet test  package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+        continue-on-error: true
+      - name: File issue on failure
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ci/file-external-breakage-issue.sh "NetMQ floating"
+```
+
+- [ ] **Step 3: `ci/file-external-breakage-issue.sh` (dedup-by-week)**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+LABEL="external-breakage"
+TITLE="external-breakage: $1 ($(date -u +%Y-W%V))"
+existing=$(gh issue list --label "$LABEL" --state open --search "$TITLE in:title" --json number --jq 'length')
+if [ "$existing" = "0" ]; then
+    gh issue create --label "$LABEL" --title "$TITLE" \
+        --body "Nightly canary build failed against $1. See run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+fi
+```
+
+(Title includes ISO week so an unresolved breakage opens at most one
+issue per week; once fixed, future weeks stay clean.)
+
+- [ ] **Step 4: Commit**
+
+```powershell
+git add .github/workflows/external-compat.yml .github/dependabot.yml `
+        ci/file-external-breakage-issue.sh
+git commit -m "ci(compat): nightly canaries + dependabot for upstream breakage"
+```
+
+---
+
+### Task 6.6: Board SDK version probes + minimum-support gate
+
+**Files:**
+- Modify: `plugin-openephys/OEconnect/Source/Boards/IBoardAdapter.h`
+- Modify: each `*Adapter.h/.cpp`
+- Modify: `plugin-openephys/OEconnect/Source/OEconnectJuceProcessor.cpp`
+- Modify: `plugin-openephys/OEconnect/README.md`
+
+- [ ] **Step 1: Extend `IBoardAdapter`**
+
+```cpp
+virtual const char* sdkVersionString() const = 0;
+virtual bool  meetsMinimumSdk() const = 0;
+```
+
+Default implementations on `FileReaderAdapter` return `"FileReader"` and
+`true` (no SDK to gate on).
+
+- [ ] **Step 2: Minimum-support constants per adapter**
+
+Each real adapter defines its floor as a header-level constant:
+
+```cpp
+/* RhdAcqBoardAdapter.h */
+inline constexpr uint32_t kMinRhythmFirmware = 0x0107'0000u;  /* v1.7 */
+```
+
+`meetsMinimumSdk()` queries the live board (TODO marker pointing at the
+SDK call) and compares against the constant.
+
+- [ ] **Step 3: Gate at startAcquisition**
+
+```cpp
+if (board_ && !board_->meetsMinimumSdk()) {
+    /* Refuse to start. */
+    AlertWindow::showMessageBoxAsync(MessageBoxIconType::WarningIcon,
+        "OEconnect",
+        "Board SDK '" + String(board_->sdkVersionString()) +
+        "' is older than the minimum supported by this OEconnect release. " +
+        "Upgrade the board firmware/SDK, or run in observation-only mode "
+        "(remove this signal chain's TTL outputs and slow-cmd sinks).");
+    /* Also emit one OEC_STREAM_ERROR frame so Bonsai sees the reason. */
+    return false;
+}
+```
+
+`OEC_STREAM_ERROR` (id `0x0022`) already exists in libshared; the body
+is `[uint16 code][char text[]]` (UTF-8, no trailing NUL).
+
+- [ ] **Step 4: Document observation-only fallback in README**
+
+Append to `plugin-openephys/OEconnect/README.md`:
+
+```markdown
+### Observation-only mode
+If the OE plugin loads against a board SDK older than the minimum
+supported, the plugin refuses to start. To keep the bridge usable while
+the lab upgrades, configure the signal chain with the OEconnect plugin
+*only* downstream of a Bandpass Filter (no TTL out sinks, no
+`StartRecording` sink from Bonsai). Bonsai then receives raw blocks but
+cannot drive commands -- exactly what you want during firmware upgrade
+windows.
+```
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add plugin-openephys/OEconnect/Source/Boards/ `
+        plugin-openephys/OEconnect/Source/OEconnectJuceProcessor.cpp `
+        plugin-openephys/OEconnect/README.md
+git commit -m "feat(plugin): board SDK version probes + minimum-support refusal"
+```
+
+---
+
+### Task 6.7: Tag-triggered release workflow
 
 **Files:**
 - Create: `.github/workflows/release.yml`
@@ -7795,7 +8614,15 @@ permissions:
   contents: write
 
 jobs:
+  protocol-compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Re-run drift check before any artifact is built
+        run: bash ci/check-drift.sh
+
   build-libshared:
+    needs: protocol-compat
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -7864,6 +8691,8 @@ jobs:
           Copy-Item artifacts/liboeconnect-Windows/liboeconnect.dll  libshared/oeconnect/build/ -ErrorAction SilentlyContinue
           Copy-Item artifacts/liboeconnect-Linux/liboeconnect.so      libshared/oeconnect/build/ -ErrorAction SilentlyContinue
           Copy-Item artifacts/liboeconnect-macOS/liboeconnect.dylib   libshared/oeconnect/build/ -ErrorAction SilentlyContinue
+      - name: Promote Unshipped -> Shipped
+        run: bash ci/promote-api.sh
       - name: Pack
         run: dotnet pack package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj -c Release -o package-bonsai/nupkg
       - uses: actions/upload-artifact@v4
@@ -7901,6 +8730,11 @@ jobs:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 ```
 
+The `protocol-compat` job re-runs Task 6.2's drift check as a hard gate
+before any artifact is built. `pack-bonsai` calls `ci/promote-api.sh`
+(from Task 6.3) to fold the staged Unshipped lines into Shipped as part
+of the release commit.
+
 - [ ] **Step 2: Commit**
 
 ```powershell
@@ -7910,7 +8744,7 @@ git commit -m "ci(release): tag-triggered build + GitHub Release + NuGet push"
 
 ---
 
-### Task 5.2: Release notes template
+### Task 6.8: Release notes template
 
 **Files:**
 - Create: `docs/release-notes/RELEASE_TEMPLATE.md`
@@ -7934,7 +8768,12 @@ git commit -m "ci(release): tag-triggered build + GitHub Release + NuGet push"
 
 ### Protocol
 - Wire protocol version: see [`spec/oec-protocol-v1.md`](../spec/oec-protocol-v1.md).
-- This release is `version_major` = 1.
+- Compatible producer/consumer protocol versions are negotiated via the
+  HELLO handshake (§11). v1.0 peers without HELLO are still supported.
+
+### Supported upstream versions
+- See [`docs/compat-policy.md`](../docs/compat-policy.md) for the
+  authoritative table.
 
 (Automatic changelog from commits below.)
 ```
@@ -7948,7 +8787,7 @@ git commit -m "docs(release): GitHub Release body template"
 
 ---
 
-### Task 5.3: Standalone `liboeconnect.runtime` NuGet
+### Task 6.9: Standalone `liboeconnect.runtime` NuGet
 
 **Files:**
 - Create: `libshared/oeconnect/runtime/liboeconnect.runtime.nuspec`
@@ -7961,9 +8800,9 @@ git commit -m "docs(release): GitHub Release body template"
 <package>
   <metadata>
     <id>liboeconnect.runtime</id>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <authors>OEconnect contributors</authors>
-    <description>Native runtime for the OEconnect wire protocol (frame, ringbuf, shm, drift, sidecar). Consumed by Bonsai.OEconnect; can also be used by other .NET clients via P/Invoke.</description>
+    <description>Native runtime for the OEconnect wire protocol (frame, ringbuf, shm, drift, sidecar, hello). Consumed by Bonsai.OEconnect; can also be used by other .NET clients via P/Invoke.</description>
     <license type="expression">MIT</license>
     <projectUrl>https://github.com/oeconnect/oeconnect</projectUrl>
     <tags>oeconnect openephys native runtime</tags>
@@ -7980,7 +8819,7 @@ git commit -m "docs(release): GitHub Release body template"
 
 ```powershell
 # libshared/oeconnect/runtime/build.ps1
-param([string]$Version = "1.0.0")
+param([string]$Version = "1.1.0")
 
 Push-Location $PSScriptRoot
 try {
@@ -7999,7 +8838,7 @@ git commit -m "build(libshared): standalone liboeconnect.runtime nupkg"
 
 ---
 
-### Task 5.4: Final cross-subsystem smoke test before tagging
+### Task 6.10: Final cross-subsystem smoke test before tagging
 
 - [ ] **Step 1: Local clean build of every artifact in Release**
 
@@ -8016,28 +8855,43 @@ cmake --build plugin-openephys/OEconnect/build --config Release --parallel
 ctest --test-dir plugin-openephys/OEconnect/build -C Release --output-on-failure
 
 # Bonsai package
-dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.sln -c Release
-dotnet test  package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.sln -c Release
+dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+dotnet test  package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
 dotnet pack  package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj -c Release -o package-bonsai/nupkg
 ```
 
 Expected: every step exits 0; all ctest + dotnet test PASS.
 
-- [ ] **Step 2: Tag a release candidate locally for dry-run validation**
+- [ ] **Step 2: ABI back-compat probe — run *previous* tag's xUnit against *current* libshared**
 
 ```powershell
-git tag -a v1.0.0-rc.1 -m "OEconnect v1.0.0 release candidate 1"
+# Check out the prior tag into a worktree, point its tests at the
+# freshly-built libshared, and re-run.
+git worktree add /tmp/prev-tag $(git describe --tags --abbrev=0 HEAD^)
+Copy-Item libshared/oeconnect/build/Release/oeconnect.dll `
+  /tmp/prev-tag/package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests/bin/Release/net*.0/
+dotnet test /tmp/prev-tag/package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+git worktree remove /tmp/prev-tag
+```
+
+Expected: previous tag's tests pass against the current native lib —
+proves we didn't silently break the ABI.
+
+- [ ] **Step 3: Tag a release candidate locally for dry-run validation**
+
+```powershell
+git tag -a v1.1.0-rc.1 -m "OEconnect v1.1.0 release candidate 1"
 git tag --list "v*"
 ```
 
 (Do NOT push the tag yet — that would fire the release workflow against
 NuGet.org. Push only after manual latency verification on real hardware.)
 
-- [ ] **Step 3: Commit final state**
+- [ ] **Step 4: Commit final state**
 
 ```powershell
 git status
-git log --oneline -20
+git log --oneline -25
 ```
 
 Expected: clean working tree; commit history reflects the entire plan
@@ -8045,40 +8899,57 @@ sequence in order.
 
 ---
 
-**Phase 5 done.** Release pipeline + standalone native NuGet ready; full local smoke build passes before the first real tag push.
+**Phase 6 done.** Release pipeline, drift gates, public-API tracking,
+golden corpus, nightly canaries, board-SDK refusal, and standalone
+native NuGet are all in place. Full local smoke build + ABI back-compat
+probe pass before the first real tag push.
 
 ---
 
 ## Plan complete
 
-All five phases produce working, testable artifacts:
+All seven phases produce working, testable artifacts:
 
-| Phase | Artifact                                            | Tested by                                                       |
-|-------|-----------------------------------------------------|-----------------------------------------------------------------|
-| 0     | Repo, frozen spec, CI skeleton                      | CI noop runs green                                              |
-| 1     | `liboeconnect.{dll,so,dylib}` + headers             | gtest unit suite + 10⁹-frame stress                              |
-| 2     | `OEconnect` OE plugin module bundle                 | gtest hot-path tests + manual OE-GUI smoke                       |
-| 3     | `Bonsai.OEconnect` NuGet                            | xUnit + end-to-end Bonsai ↔ synth roundtrip                      |
-| 4     | Example workflows + manual latency procedure        | Manual scope verification (headline number)                      |
-| 5     | Release pipeline                                    | Tagged release builds three OS bundles + NuGet                   |
+| Phase | Artifact                                                | Tested by                                                                       |
+|-------|---------------------------------------------------------|---------------------------------------------------------------------------------|
+| 0     | Repo, frozen spec, CI skeleton                          | CI noop runs green                                                              |
+| 1     | `liboeconnect.{dll,so,dylib}` + headers                 | gtest unit suite + 10⁹-frame stress                                              |
+| 2     | `OEconnect` OE plugin module bundle                     | gtest hot-path tests + manual OE-GUI smoke                                       |
+| 3     | `Bonsai.OEconnect` NuGet                                | xUnit + end-to-end Bonsai ↔ synth roundtrip                                      |
+| 4     | Example workflows + manual latency procedure            | Manual scope verification (headline number)                                      |
+| 5     | Protocol v1.1 HELLO handshake                           | gtest + xUnit negotiation matrix (same / newer-minor / older / major-mismatch)    |
+| 6     | Release pipeline + compat radar                         | Tag build + drift gate + public-API gate + golden corpus + nightly canaries      |
+| 7     | Deferred opt-in features (wakeup events, ZMQ CURVE)     | Self-contained; tested in their own commits when implemented                     |
 
 **Reference contracts that must remain in sync:**
 - Wire spec: `spec/oec-protocol-v1.md`
 - C ABI:     `libshared/oeconnect/include/oeconnect/*.h`
 - .NET interop: `package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Interop/NativeMethods.cs`
+- Public .NET API surface: `package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/PublicAPI.Shipped.txt`
+- Golden wire corpus: `tests/golden/v1.0/*.bin`
+- Drift baseline: `ci/known-good.txt`
 
-The CI `spec.yml` workflow enforces version bumps when the wire frame
-layout or stream IDs change.
+The CI workflows enforce these in three layers:
+1. `spec-drift.yml` (Task 6.2) fails PRs that touch the spec or ABI
+   headers without bumping `OEC_VERSION_*` and updating `ci/known-good.txt`.
+2. `PublicApiAnalyzers` (Task 6.3) fails the build when a public .NET
+   member is renamed or removed without a deprecation cycle.
+3. `external-compat.yml` (Task 6.5) catches upstream breakage from OE
+   GUI tip, Bonsai.Core, and NetMQ within 24 h via nightly canaries.
+
+The HELLO handshake (Phase 5) keeps producer/consumer mismatches
+discoverable at runtime so older deployments degrade predictably
+rather than silently.
 
 ---
 
-## Phase 6 — Deferred opt-in features (post-v1.0)
+## Phase 7 — Deferred opt-in features (post-v1.1)
 
 These two features appear in the spec but are explicitly opt-in / optional
-and are not needed to ship v1.0. Each is a self-contained follow-up that
+and are not needed to ship v1.1. Each is a self-contained follow-up that
 can be implemented after the main plan is green.
 
-### Task 6.1: Wakeup events (spec §5.4)
+### Task 7.1: Wakeup events (spec §5.4)
 
 **Why:** Lower CPU at the cost of a tiny scheduler-jitter hit when the
 consumer is willing to block instead of spin. Default polling is fine for
@@ -8118,7 +8989,7 @@ git commit -am "feat(libshared,plugin): optional shmem wakeup events"
 
 ---
 
-### Task 6.2: ZMQ CURVE authentication (spec §6.7)
+### Task 7.2: ZMQ CURVE authentication (spec §6.7)
 
 **Why:** Required for any production deployment that binds to a non-loopback
 address on a shared LAN. Off by default; gated by the editor's "Require
@@ -8169,6 +9040,6 @@ git commit -am "feat(plugin,bonsai): optional ZMQ CURVE auth + non-loopback bind
 
 ---
 
-**Phase 6 (deferred) noted.** Neither task blocks v1.0; both are isolated
+**Phase 7 (deferred) noted.** Neither task blocks v1.1; both are isolated
 follow-ups whose scope and verification procedure are now spelled out.
 
