@@ -17,6 +17,7 @@ extern "C" {
 #include "oeconnect/ringbuf.h"
 #include "oeconnect/shm.h"
 #include "oeconnect/version.h"
+#include "oeconnect/hello.h"
 }
 
 using namespace oec::plugin;
@@ -123,6 +124,48 @@ TEST(HotPath, SetTtlCommandFiresBoardAdapter) {
     oec_ringbuf_detach(ack_reader);
 
     oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
+TEST(HotPath, HelloFrameRoundtripsThroughShmem) {
+    /* Producer-side: write a HELLO frame onto the data ring via raw libshared
+     * primitives, then re-attach as a consumer and decode it. Mirrors how
+     * Bonsai's Session.ReaderLoop will see the announcement at startup. */
+    ShmemTransport t;
+    std::string name = uniq() + ".hello";
+    ASSERT_TRUE(t.start(name));
+
+    uint32_t cap = 0;
+    uint8_t* slot = t.acquireDataSlot(&cap, /*dropOldest=*/false);
+    ASSERT_NE(slot, nullptr);
+    const uint32_t plugin_ver = 0x01000200u;
+    const uint32_t lib_ver    = 0x01010000u;
+    size_t n = oec_hello_emit(slot, cap, plugin_ver, lib_ver);
+    ASSERT_GT(n, 0u);
+    t.publishData((uint32_t)n);
+
+    /* Consumer side. */
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+    uint32_t sz = 0;
+    const void* frame = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(frame, nullptr);
+    const oec_frame_header_t* fh = (const oec_frame_header_t*)frame;
+    EXPECT_EQ(fh->stream_id, OEC_STREAM_HELLO);
+    EXPECT_EQ(fh->payload_len, sizeof(oec_hello_body_t));
+    const oec_hello_body_t* body =
+        (const oec_hello_body_t*)((const uint8_t*)frame + sizeof(*fh));
+    EXPECT_EQ(body->protocol_major, OEC_PROTOCOL_VERSION_MAJOR);
+    EXPECT_EQ(body->protocol_minor, OEC_PROTOCOL_VERSION_MINOR);
+    EXPECT_EQ(body->plugin_version, plugin_ver);
+    EXPECT_EQ(body->lib_version,    lib_ver);
+    EXPECT_EQ(body->reserved,       0u);
+    oec_ringbuf_detach(rb);
+    oec_shm_close(h);
+
     t.stop();
     oec_shm_unlink(name.c_str());
 }

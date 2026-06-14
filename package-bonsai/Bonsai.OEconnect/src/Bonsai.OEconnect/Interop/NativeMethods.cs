@@ -29,6 +29,12 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "oec_region_open", CallingConvention = CallingConvention.Cdecl)]
     public static extern OecStatus RegionOpen(IntPtr mem, UIntPtr memLen, out IntPtr outHeader);
 
+    [DllImport(Lib, EntryPoint = "oec_region_init", CallingConvention = CallingConvention.Cdecl)]
+    public static extern OecStatus RegionInit(IntPtr mem, UIntPtr memLen,
+        uint slotSize, uint slotCount,
+        uint cmdSlotSize, uint cmdSlotCount,
+        uint ackSlotSize, uint ackSlotCount);
+
     /* --- ringbuf --- */
     [DllImport(Lib, EntryPoint = "oec_ringbuf_attach", CallingConvention = CallingConvention.Cdecl)]
     public static extern OecStatus RingbufAttach(IntPtr regionMem, int kind, out IntPtr outRing);
@@ -54,8 +60,16 @@ internal static class NativeMethods
         [MarshalAs(UnmanagedType.LPStr)] string name, UIntPtr expectedSize,
         out IntPtr outShm, out IntPtr outMapped, out UIntPtr outMappedSize);
 
+    [DllImport(Lib, EntryPoint = "oec_shm_create", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    public static extern OecStatus ShmCreate(
+        [MarshalAs(UnmanagedType.LPStr)] string name, UIntPtr sizeBytes, int truncate,
+        out IntPtr outShm, out IntPtr outMapped, out UIntPtr outMappedSize);
+
     [DllImport(Lib, EntryPoint = "oec_shm_close", CallingConvention = CallingConvention.Cdecl)]
     public static extern void ShmClose(IntPtr shm);
+
+    [DllImport(Lib, EntryPoint = "oec_shm_unlink", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    public static extern OecStatus ShmUnlink([MarshalAs(UnmanagedType.LPStr)] string name);
 
     /* --- drift --- */
     [DllImport(Lib, EntryPoint = "oec_drift_create", CallingConvention = CallingConvention.Cdecl)]

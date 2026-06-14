@@ -334,9 +334,9 @@ struct oec_hello_body {
 
 ### 8.3 Timing
 
-Producer SHOULD emit one HELLO immediately after the first ACK ring publish
-on `startAcquisition`. Consumer SHOULD treat absence of HELLO within 2 s of
-session start as "remote is v1.0".
+Producer SHOULD emit one HELLO on the data ring at `startAcquisition`,
+before any `RAW_BLOCK` frame. Consumer SHOULD treat absence of HELLO
+within 2 s of session start as "remote is v1.0".
 
 ### 8.4 Negotiation rules
 

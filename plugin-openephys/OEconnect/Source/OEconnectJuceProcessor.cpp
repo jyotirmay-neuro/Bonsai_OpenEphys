@@ -83,11 +83,13 @@ bool OEconnectJuceProcessor::startAcquisition() {
     selectTransport();
     if (board_) board_->onStartAcquisition(cfg_.block_size, cfg_.sample_rate_hz);
 
-    /* Emit one HELLO frame on the ACK ring so consumers can negotiate
-     * protocol/version. Spec v1.1 §8. v1.0 consumers ignore it. */
+    /* Emit one HELLO frame on the data ring so consumers can negotiate
+     * protocol/version before any RAW frame arrives. Spec v1.1 §8.
+     * v1.0 consumers route the unknown stream id through their default
+     * discard arm. */
     if (transport_) {
-        uint32_t acap = 0;
-        if (uint8_t* aslot = transport_->acquireAckSlot(&acap)) {
+        uint32_t dcap = 0;
+        if (uint8_t* dslot = transport_->acquireDataSlot(&dcap, /*dropOldest=*/false)) {
             const uint32_t plugin_ver =
                 ((uint32_t)OEC_PLUGIN_VERSION_MAJOR << 16) |
                 ((uint32_t)OEC_PLUGIN_VERSION_MINOR << 8)  |
@@ -96,8 +98,8 @@ bool OEconnectJuceProcessor::startAcquisition() {
                 ((uint32_t)OEC_LIB_VERSION_MAJOR << 16) |
                 ((uint32_t)OEC_LIB_VERSION_MINOR << 8)  |
                 ((uint32_t)OEC_LIB_VERSION_PATCH);
-            size_t n = oec_hello_emit(aslot, acap, plugin_ver, lib_ver);
-            if (n > 0) transport_->publishAck((uint32_t)n);
+            size_t n = oec_hello_emit(dslot, dcap, plugin_ver, lib_ver);
+            if (n > 0) transport_->publishData((uint32_t)n);
         }
     }
 
