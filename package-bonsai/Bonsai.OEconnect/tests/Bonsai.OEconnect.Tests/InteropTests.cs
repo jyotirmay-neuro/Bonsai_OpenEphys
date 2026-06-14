@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
 using Bonsai.OEconnect.Interop;
 using Xunit;
 
@@ -5,6 +8,51 @@ namespace Bonsai.OEconnect.Tests;
 
 public class InteropTests
 {
+    static readonly IReadOnlyDictionary<string, ushort> GoldenStreams = new Dictionary<string, ushort>
+    {
+        ["raw_block.bin"]   = OecStreams.RawBlock,
+        ["ttl_event.bin"]   = OecStreams.TtlEvent,
+        ["spike.bin"]       = OecStreams.Spike,
+        ["sync.bin"]        = OecStreams.Sync,
+        ["cmd_set_ttl.bin"] = OecStreams.Cmd,
+        ["ack_ok.bin"]      = OecStreams.Ack,
+        ["hello.bin"]       = OecStreams.Hello,
+    };
+
+    static string? FindCorpusDir()
+    {
+        for (var d = new DirectoryInfo(System.AppContext.BaseDirectory); d != null; d = d.Parent)
+        {
+            var cand = Path.Combine(d.FullName, "tests", "golden", "v1.0");
+            if (File.Exists(Path.Combine(cand, "hello.bin"))) return cand;
+        }
+        return null;
+    }
+
+    [Fact]
+    public void GoldenCorpus_EveryFrameDecodesAndValidates()
+    {
+        // Cross-runtime guard: the same tests/golden/v1.0 frames are decoded by
+        // the gtest side (GoldenCorpus.EveryFrameDecodesAndValidates). A drift in
+        // either runtime's parsing is caught here.
+        var dir = FindCorpusDir();
+        Assert.NotNull(dir);
+
+        int headerSize = Marshal.SizeOf<OecFrameHeader>();
+        foreach (var kv in GoldenStreams)
+        {
+            var path = Path.Combine(dir, kv.Key);
+            Assert.True(File.Exists(path), $"missing golden frame: {kv.Key}");
+
+            var bytes = File.ReadAllBytes(path);
+            Assert.True(bytes.Length >= headerSize, kv.Key);
+
+            var h = MemoryMarshal.Read<OecFrameHeader>(bytes);
+            Assert.Equal(OecStatus.Ok, NativeMethods.FrameValidate(in h));
+            Assert.Equal(kv.Value, h.StreamId);
+            Assert.Equal((uint)(bytes.Length - headerSize), h.PayloadLen);
+        }
+    }
     [Fact]
     public void FrameInit_PopulatesMagicAndVersion()
     {

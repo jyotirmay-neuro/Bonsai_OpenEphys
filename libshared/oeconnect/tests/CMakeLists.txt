@@ -27,6 +27,14 @@ gtest_discover_tests(oec_tests)
 add_executable(oec_stress_ringbuf stress_ringbuf.cc)
 target_link_libraries(oec_stress_ringbuf PRIVATE oeconnect)
 
+# Maintenance tool: regenerates the v1.0 golden wire corpus (tests/golden/v1.0).
+# Not run by ctest; invoked deliberately via `--target regen_all`.
+add_executable(regen_all ${CMAKE_SOURCE_DIR}/../../tests/golden/v1.0/regen_all.cc)
+target_link_libraries(regen_all PRIVATE oeconnect)
+if(WIN32)
+  target_compile_definitions(regen_all PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 if(WIN32 AND OEC_BUILD_SHARED)
   # Copy liboeconnect runtime next to the test binary so gtest_discover_tests
   # (which runs the binary at build time on Windows) finds the DLL.
@@ -37,5 +45,9 @@ if(WIN32 AND OEC_BUILD_SHARED)
   add_custom_command(TARGET oec_stress_ringbuf POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:oeconnect> $<TARGET_FILE_DIR:oec_stress_ringbuf>
+  )
+  add_custom_command(TARGET regen_all POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:oeconnect> $<TARGET_FILE_DIR:regen_all>
   )
 endif()

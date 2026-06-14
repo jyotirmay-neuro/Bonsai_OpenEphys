@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 #include <cstring>
 #include <vector>
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <string>
 
 extern "C" {
 #include "oeconnect/version.h"
@@ -125,4 +129,58 @@ TEST(Crc16, KnownVector_123456789) {
 
 TEST(Crc16, EmptyInputReturnsInit) {
     EXPECT_EQ(oec_crc16("", 0), 0xFFFFu);
+}
+
+/* ---- Golden wire corpus (tests/golden/v1.0) ----
+ * Cross-runtime guard: every committed .bin must decode to a header whose
+ * stream_id matches its filename and that passes oec_frame_validate. The
+ * xUnit side (InteropTests.GoldenCorpus_*) reuses the same files so a drift in
+ * either runtime is caught. */
+
+namespace {
+namespace fs = std::filesystem;
+
+/* Walk up from the current directory until tests/golden/v1.0/hello.bin is found. */
+fs::path FindCorpusDir() {
+    for (fs::path d = fs::current_path(); ; d = d.parent_path()) {
+        fs::path cand = d / "tests" / "golden" / "v1.0";
+        if (fs::exists(cand / "hello.bin")) return cand;
+        if (!d.has_parent_path() || d == d.parent_path()) break;
+    }
+    return {};
+}
+
+const std::map<std::string, uint16_t>& ExpectedStreams() {
+    static const std::map<std::string, uint16_t> m = {
+        {"raw_block.bin",   OEC_STREAM_RAW_BLOCK},
+        {"ttl_event.bin",   OEC_STREAM_TTL_EVENT},
+        {"spike.bin",       OEC_STREAM_SPIKE},
+        {"sync.bin",        OEC_STREAM_SYNC},
+        {"cmd_set_ttl.bin", OEC_STREAM_CMD},
+        {"ack_ok.bin",      OEC_STREAM_ACK},
+        {"hello.bin",       OEC_STREAM_HELLO},
+    };
+    return m;
+}
+}  // namespace
+
+TEST(GoldenCorpus, EveryFrameDecodesAndValidates) {
+    fs::path dir = FindCorpusDir();
+    ASSERT_FALSE(dir.empty()) << "could not locate tests/golden/v1.0";
+
+    for (const auto& [name, stream_id] : ExpectedStreams()) {
+        fs::path path = dir / name;
+        ASSERT_TRUE(fs::exists(path)) << "missing golden frame: " << name;
+
+        std::ifstream f(path, std::ios::binary);
+        std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)),
+                                   std::istreambuf_iterator<char>());
+        ASSERT_GE(bytes.size(), sizeof(oec_frame_header_t)) << name;
+
+        oec_frame_header_t h;
+        std::memcpy(&h, bytes.data(), sizeof(h));
+        EXPECT_EQ(oec_frame_validate(&h), OEC_OK) << name;
+        EXPECT_EQ(h.stream_id, stream_id) << name;
+        EXPECT_EQ(h.payload_len, bytes.size() - sizeof(oec_frame_header_t)) << name;
+    }
 }
