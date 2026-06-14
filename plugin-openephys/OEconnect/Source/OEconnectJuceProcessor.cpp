@@ -12,7 +12,19 @@
 extern "C" {
 #include "oeconnect/sidecar.h"
 #include "oeconnect/shm.h"
+#include "oeconnect/hello.h"
+#include "oeconnect/version.h"
 }
+
+#ifndef OEC_PLUGIN_VERSION_MAJOR
+#  define OEC_PLUGIN_VERSION_MAJOR 1
+#endif
+#ifndef OEC_PLUGIN_VERSION_MINOR
+#  define OEC_PLUGIN_VERSION_MINOR 0
+#endif
+#ifndef OEC_PLUGIN_VERSION_PATCH
+#  define OEC_PLUGIN_VERSION_PATCH 0
+#endif
 
 #if defined(_WIN32)
   #include <process.h>
@@ -70,6 +82,25 @@ void OEconnectJuceProcessor::selectTransport() {
 bool OEconnectJuceProcessor::startAcquisition() {
     selectTransport();
     if (board_) board_->onStartAcquisition(cfg_.block_size, cfg_.sample_rate_hz);
+
+    /* Emit one HELLO frame on the ACK ring so consumers can negotiate
+     * protocol/version. Spec v1.1 §8. v1.0 consumers ignore it. */
+    if (transport_) {
+        uint32_t acap = 0;
+        if (uint8_t* aslot = transport_->acquireAckSlot(&acap)) {
+            const uint32_t plugin_ver =
+                ((uint32_t)OEC_PLUGIN_VERSION_MAJOR << 16) |
+                ((uint32_t)OEC_PLUGIN_VERSION_MINOR << 8)  |
+                ((uint32_t)OEC_PLUGIN_VERSION_PATCH);
+            const uint32_t lib_ver =
+                ((uint32_t)OEC_LIB_VERSION_MAJOR << 16) |
+                ((uint32_t)OEC_LIB_VERSION_MINOR << 8)  |
+                ((uint32_t)OEC_LIB_VERSION_PATCH);
+            size_t n = oec_hello_emit(aslot, acap, plugin_ver, lib_ver);
+            if (n > 0) transport_->publishAck((uint32_t)n);
+        }
+    }
+
     drift_emitter_ = std::make_unique<DriftEmitter>(outbox_, sample_counter_);
     drift_emitter_->start(cfg_.sample_rate_hz);
 

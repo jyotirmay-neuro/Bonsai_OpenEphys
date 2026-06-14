@@ -62,6 +62,11 @@ if(OEC_PLUGIN_BUILD_BUNDLE)
             ${GUI_BASE_DIR}/Source/Plugins
             ${GUI_BASE_DIR}/JuceLibraryCode
   )
+  target_compile_definitions(OEconnect PRIVATE
+    OEC_PLUGIN_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    OEC_PLUGIN_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    OEC_PLUGIN_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+  )
   target_link_libraries(OEconnect
     PRIVATE oeconnect libzmq-static cppzmq
   )
