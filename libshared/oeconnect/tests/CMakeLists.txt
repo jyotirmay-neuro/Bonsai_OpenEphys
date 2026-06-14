@@ -18,6 +18,9 @@ add_executable(oec_tests
   test_sidecar.cc
 )
 target_link_libraries(oec_tests PRIVATE oeconnect GTest::gtest_main)
+if(WIN32)
+  target_compile_definitions(oec_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 include(GoogleTest)
 gtest_discover_tests(oec_tests)
 

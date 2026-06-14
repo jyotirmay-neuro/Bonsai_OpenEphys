@@ -7,11 +7,11 @@
  * CI fails if these drift from the spec.
  */
 #define OEC_PROTOCOL_VERSION_MAJOR 1
-#define OEC_PROTOCOL_VERSION_MINOR 0
+#define OEC_PROTOCOL_VERSION_MINOR 1
 
 /* Library implementation version (independent of wire version). */
 #define OEC_LIB_VERSION_MAJOR 1
-#define OEC_LIB_VERSION_MINOR 0
+#define OEC_LIB_VERSION_MINOR 1
 #define OEC_LIB_VERSION_PATCH 0
 
 #define OEC_FRAME_MAGIC   0x3143454Fu /* 'O','E','C','1' little-endian */

@@ -21,6 +21,7 @@ set(OEC_SOURCES
   src/shm.c
   src/drift.c
   src/sidecar.c
+  src/hello.c
 )
 
 if(OEC_BUILD_SHARED)

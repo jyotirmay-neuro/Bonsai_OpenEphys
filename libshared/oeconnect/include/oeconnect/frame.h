@@ -40,6 +40,7 @@ OEC_STATIC_ASSERT(sizeof(oec_frame_header_t) == 32,
 #define OEC_STREAM_CMD             0x0020u
 #define OEC_STREAM_ACK             0x0021u
 #define OEC_STREAM_ERROR           0x0022u
+#define OEC_STREAM_HELLO           0x0030u
 
 /* ---- Block sub-header (8 B, leads RAW_BLOCK / FILTERED_BLOCK payloads) ---- */
 #pragma pack(push, 1)
