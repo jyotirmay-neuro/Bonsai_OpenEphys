@@ -1,0 +1,76 @@
+name: external-compat
+on:
+  schedule:
+    - cron: '17 4 * * *'   # 04:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues:   write
+
+jobs:
+  oe-gui-tip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Roll plugin-GUI submodule to tip of main
+        run: |
+          git -C plugin-openephys/OEconnect/external/plugin-GUI fetch origin
+          git -C plugin-openephys/OEconnect/external/plugin-GUI checkout origin/main
+      - name: Configure + build
+        id:   build
+        run:  |
+          cmake -S plugin-openephys/OEconnect -B build-plugin \
+                -DOEC_PLUGIN_BUILD_TESTS=ON -DOEC_PLUGIN_BUILD_BUNDLE=OFF
+          cmake --build build-plugin --target oec_plugin_tests --config Debug
+        continue-on-error: true
+      - name: File issue on failure
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ci/file-external-breakage-issue.sh "OE plugin-GUI tip"
+
+  bonsai-core-floating:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Float Bonsai.Core to 2.*
+        run: |
+          sed -i 's@Include="Bonsai.Core" Version="2\.[0-9.]*"@Include="Bonsai.Core" Version="2.*"@' \
+              package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj
+      - name: Restore + build + test
+        id:   build
+        run:  |
+          dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+          dotnet test  package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+        continue-on-error: true
+      - name: File issue on failure
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ci/file-external-breakage-issue.sh "Bonsai.Core floating 2.*"
+
+  netmq-floating:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Float NetMQ to *
+        run: |
+          sed -i 's@Include="NetMQ" Version="[0-9.]*"@Include="NetMQ" Version="*"@' \
+              package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj
+      - name: Restore + build + test
+        id:   build
+        run:  |
+          dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+          dotnet test  package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release
+        continue-on-error: true
+      - name: File issue on failure
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ci/file-external-breakage-issue.sh "NetMQ floating"
