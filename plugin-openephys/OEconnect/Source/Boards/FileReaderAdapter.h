@@ -14,6 +14,8 @@ public:
 
     std::string name() const override { return "FileReader"; }
     int numTtlOutLines() const override { return 8; }
+    const char* sdkVersionString() const override { return "FileReader"; }
+    bool meetsMinimumSdk() const override { return true; }  // no SDK to gate on
     uint64_t setTtl(uint8_t line, bool high) override;
 
     void onStartAcquisition(int blockSize, double sampleRate) override;

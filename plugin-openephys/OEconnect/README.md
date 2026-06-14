@@ -32,3 +32,12 @@ Install the resulting `OEconnect.bundle` into your OE GUI plugin folder.
 4. Drag onto the signal chain *after* a Bandpass Filter (or any other
    downstream consumer) and *before* a Record Node:
    `[Acq Source] -> [Bandpass] -> [OEconnect] -> [Record Node]`.
+
+### Observation-only mode
+If the OE plugin loads against a board SDK older than the minimum
+supported, the plugin refuses to start. To keep the bridge usable while
+the lab upgrades, configure the signal chain with the OEconnect plugin
+*only* downstream of a Bandpass Filter (no TTL out sinks, no
+`StartRecording` sink from Bonsai). Bonsai then receives raw blocks but
+cannot drive commands -- exactly what you want during firmware upgrade
+windows.

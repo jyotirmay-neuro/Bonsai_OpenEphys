@@ -13,6 +13,7 @@ extern "C" {
 #include "oeconnect/sidecar.h"
 #include "oeconnect/shm.h"
 #include "oeconnect/hello.h"
+#include "oeconnect/frame.h"
 #include "oeconnect/version.h"
 }
 
@@ -81,6 +82,41 @@ void OEconnectJuceProcessor::selectTransport() {
 
 bool OEconnectJuceProcessor::startAcquisition() {
     selectTransport();
+
+    /* Minimum-support gate: refuse to start against a board SDK / firmware
+     * older than this OEconnect release supports, rather than risk silently
+     * corrupting data. See the plugin README "Observation-only mode" for the
+     * workaround during firmware-upgrade windows. */
+    if (board_ && !board_->meetsMinimumSdk()) {
+        AlertWindow::showMessageBoxAsync(MessageBoxIconType::WarningIcon,
+            "OEconnect",
+            "Board SDK '" + String(board_->sdkVersionString()) +
+            "' is older than the minimum supported by this OEconnect release. " +
+            "Upgrade the board firmware/SDK, or run in observation-only mode "
+            "(remove this signal chain's TTL outputs and slow-cmd sinks).");
+
+        /* Also emit one OEC_STREAM_ERROR frame so Bonsai sees the reason.
+         * Body: [uint16 code][utf8 text...] (no trailing NUL). */
+        if (transport_) {
+            uint32_t dcap = 0;
+            if (uint8_t* dslot = transport_->acquireDataSlot(&dcap, /*dropOldest=*/false)) {
+                const char*    msg     = board_->sdkVersionString();
+                const uint16_t code    = OEC_ACK_NOT_SUPPORTED;
+                const size_t   textlen = std::strlen(msg);
+                const size_t   payload = sizeof(code) + textlen;
+                if (dcap >= sizeof(oec_frame_header_t) + payload) {
+                    oec_frame_header_t h;
+                    oec_frame_init(&h, OEC_STREAM_ERROR, (uint32_t)payload, 0, 0, 0);
+                    std::memcpy(dslot, &h, sizeof(h));
+                    std::memcpy(dslot + sizeof(h), &code, sizeof(code));
+                    std::memcpy(dslot + sizeof(h) + sizeof(code), msg, textlen);
+                    transport_->publishData((uint32_t)(sizeof(h) + payload));
+                }
+            }
+        }
+        return false;
+    }
+
     if (board_) board_->onStartAcquisition(cfg_.block_size, cfg_.sample_rate_hz);
 
     /* Emit one HELLO frame on the data ring so consumers can negotiate
