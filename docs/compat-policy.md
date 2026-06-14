@@ -52,3 +52,12 @@ Updated every release. Current floor:
 3. Ship one minor release carrying both the old and the new member.
 4. Remove on the next major; move the line out of `PublicAPI.Shipped.txt` in
    the same PR that does the removal.
+
+### Public API surface changes
+- Add a member → also append its canonical declaration to
+  `PublicAPI.Unshipped.txt`. CI passes.
+- Remove or rename a member → analyzer RS0017 fails the build. The fix
+  is either (a) add an `[Obsolete]` shim, or (b) make a major version
+  bump and move the line out of `PublicAPI.Shipped.txt` in the same PR.
+- Release builds move `Unshipped → Shipped` via `ci/promote-api.sh`,
+  invoked by the tag-triggered release workflow.

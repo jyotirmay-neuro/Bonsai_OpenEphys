@@ -1,0 +1,8 @@
+# PublicApiAnalyzers (Task 6.3): keep the surface-tracking gate active and
+# silence nullable-annotation rules (project is nullable-disabled).
+[*.cs]
+dotnet_diagnostic.RS0016.severity = warning
+dotnet_diagnostic.RS0017.severity = warning
+dotnet_diagnostic.RS0036.severity = none
+dotnet_diagnostic.RS0037.severity = none
+dotnet_diagnostic.RS0041.severity = none

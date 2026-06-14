@@ -1,0 +1,233 @@
+Bonsai.OEconnect.Data.OpenEphysConnectionException
+Bonsai.OEconnect.Data.OpenEphysConnectionException.Endpoint.get -> string
+Bonsai.OEconnect.Data.OpenEphysConnectionException.LastDropCount.get -> long
+Bonsai.OEconnect.Data.OpenEphysConnectionException.OpenEphysConnectionException(string transport, string endpoint, long drops, string message) -> void
+Bonsai.OEconnect.Data.OpenEphysConnectionException.Transport.get -> string
+Bonsai.OEconnect.Data.RawBlock
+Bonsai.OEconnect.Data.RawBlock.Clone() -> Bonsai.OEconnect.Data.RawBlock
+Bonsai.OEconnect.Data.RawBlock.HostQpcTicks.get -> ulong
+Bonsai.OEconnect.Data.RawBlock.NumChannels.get -> int
+Bonsai.OEconnect.Data.RawBlock.NumSamples.get -> int
+Bonsai.OEconnect.Data.RawBlock.RawBlock() -> void
+Bonsai.OEconnect.Data.RawBlock.RawBlock(ulong sampleIndex, ulong hostQpcTicks, ushort streamId, int numChannels, int numSamples, System.ReadOnlyMemory<short> samples) -> void
+Bonsai.OEconnect.Data.RawBlock.SampleIndex.get -> ulong
+Bonsai.OEconnect.Data.RawBlock.Samples.get -> System.ReadOnlyMemory<short>
+Bonsai.OEconnect.Data.RawBlock.StreamId.get -> ushort
+Bonsai.OEconnect.Data.SessionStatus
+Bonsai.OEconnect.Data.SessionStatus.BoardName.get -> string
+Bonsai.OEconnect.Data.SessionStatus.BoardName.init -> void
+Bonsai.OEconnect.Data.SessionStatus.DropCount.get -> long
+Bonsai.OEconnect.Data.SessionStatus.DropCount.init -> void
+Bonsai.OEconnect.Data.SessionStatus.EstimatedLagMs.get -> double
+Bonsai.OEconnect.Data.SessionStatus.EstimatedLagMs.init -> void
+Bonsai.OEconnect.Data.SessionStatus.FrameCount.get -> long
+Bonsai.OEconnect.Data.SessionStatus.FrameCount.init -> void
+Bonsai.OEconnect.Data.SessionStatus.IsConnected.get -> bool
+Bonsai.OEconnect.Data.SessionStatus.IsConnected.init -> void
+Bonsai.OEconnect.Data.SessionStatus.ProtocolNegotiated.get -> bool
+Bonsai.OEconnect.Data.SessionStatus.ProtocolNegotiated.init -> void
+Bonsai.OEconnect.Data.SessionStatus.RemoteLibVersion.get -> uint
+Bonsai.OEconnect.Data.SessionStatus.RemoteLibVersion.init -> void
+Bonsai.OEconnect.Data.SessionStatus.RemotePluginVersion.get -> uint
+Bonsai.OEconnect.Data.SessionStatus.RemotePluginVersion.init -> void
+Bonsai.OEconnect.Data.SessionStatus.RemoteProtocolMajor.get -> ushort
+Bonsai.OEconnect.Data.SessionStatus.RemoteProtocolMajor.init -> void
+Bonsai.OEconnect.Data.SessionStatus.RemoteProtocolMinor.get -> ushort
+Bonsai.OEconnect.Data.SessionStatus.RemoteProtocolMinor.init -> void
+Bonsai.OEconnect.Data.SessionStatus.SessionStatus() -> void
+Bonsai.OEconnect.Data.SessionStatus.Transport.get -> string
+Bonsai.OEconnect.Data.SessionStatus.Transport.init -> void
+Bonsai.OEconnect.Data.SpikeEvent
+Bonsai.OEconnect.Data.SpikeEvent.ElectrodeId.get -> ushort
+Bonsai.OEconnect.Data.SpikeEvent.ElectrodeId.init -> void
+Bonsai.OEconnect.Data.SpikeEvent.HostQpcTicks.get -> ulong
+Bonsai.OEconnect.Data.SpikeEvent.HostQpcTicks.init -> void
+Bonsai.OEconnect.Data.SpikeEvent.SampleIndex.get -> ulong
+Bonsai.OEconnect.Data.SpikeEvent.SampleIndex.init -> void
+Bonsai.OEconnect.Data.SpikeEvent.SpikeEvent() -> void
+Bonsai.OEconnect.Data.SpikeEvent.Threshold.get -> float
+Bonsai.OEconnect.Data.SpikeEvent.Threshold.init -> void
+Bonsai.OEconnect.Data.SpikeEvent.UnitId.get -> ushort
+Bonsai.OEconnect.Data.SpikeEvent.UnitId.init -> void
+Bonsai.OEconnect.Data.SpikeEvent.Waveform.get -> System.ReadOnlyMemory<short>
+Bonsai.OEconnect.Data.SpikeEvent.Waveform.init -> void
+Bonsai.OEconnect.Data.SyncPoint
+Bonsai.OEconnect.Data.SyncPoint.FpgaSampleRateHz.get -> double
+Bonsai.OEconnect.Data.SyncPoint.FpgaSampleRateHz.init -> void
+Bonsai.OEconnect.Data.SyncPoint.HostQpcTicks.get -> ulong
+Bonsai.OEconnect.Data.SyncPoint.HostQpcTicks.init -> void
+Bonsai.OEconnect.Data.SyncPoint.SampleIndex.get -> ulong
+Bonsai.OEconnect.Data.SyncPoint.SampleIndex.init -> void
+Bonsai.OEconnect.Data.SyncPoint.SyncPoint() -> void
+Bonsai.OEconnect.Data.TtlEvent
+Bonsai.OEconnect.Data.TtlEvent.BoardId.get -> byte
+Bonsai.OEconnect.Data.TtlEvent.BoardId.init -> void
+Bonsai.OEconnect.Data.TtlEvent.Edge.get -> byte
+Bonsai.OEconnect.Data.TtlEvent.Edge.init -> void
+Bonsai.OEconnect.Data.TtlEvent.HostQpcTicks.get -> ulong
+Bonsai.OEconnect.Data.TtlEvent.HostQpcTicks.init -> void
+Bonsai.OEconnect.Data.TtlEvent.Line.get -> byte
+Bonsai.OEconnect.Data.TtlEvent.Line.init -> void
+Bonsai.OEconnect.Data.TtlEvent.SampleIndex.get -> ulong
+Bonsai.OEconnect.Data.TtlEvent.SampleIndex.init -> void
+Bonsai.OEconnect.Data.TtlEvent.TtlEvent() -> void
+Bonsai.OEconnect.Interop.OecAckStatus
+Bonsai.OEconnect.Interop.OecAckStatus.BadArg = 5 -> Bonsai.OEconnect.Interop.OecAckStatus
+Bonsai.OEconnect.Interop.OecAckStatus.Busy = 3 -> Bonsai.OEconnect.Interop.OecAckStatus
+Bonsai.OEconnect.Interop.OecAckStatus.Completed = 2 -> Bonsai.OEconnect.Interop.OecAckStatus
+Bonsai.OEconnect.Interop.OecAckStatus.Internal = 7 -> Bonsai.OEconnect.Interop.OecAckStatus
+Bonsai.OEconnect.Interop.OecAckStatus.NotSupported = 4 -> Bonsai.OEconnect.Interop.OecAckStatus
+Bonsai.OEconnect.Interop.OecAckStatus.Ok = 0 -> Bonsai.OEconnect.Interop.OecAckStatus
+Bonsai.OEconnect.Interop.OecAckStatus.Pending = 1 -> Bonsai.OEconnect.Interop.OecAckStatus
+Bonsai.OEconnect.Interop.OecAckStatus.Timeout = 6 -> Bonsai.OEconnect.Interop.OecAckStatus
+Bonsai.OEconnect.Interop.OecBlockSubheader
+Bonsai.OEconnect.Interop.OecBlockSubheader.Dtype -> byte
+Bonsai.OEconnect.Interop.OecBlockSubheader.NumChannels -> ushort
+Bonsai.OEconnect.Interop.OecBlockSubheader.NumSamples -> ushort
+Bonsai.OEconnect.Interop.OecBlockSubheader.OecBlockSubheader() -> void
+Bonsai.OEconnect.Interop.OecBlockSubheader.Reserved -> ushort
+Bonsai.OEconnect.Interop.OecBlockSubheader.SourceId -> byte
+Bonsai.OEconnect.Interop.OecCmds
+Bonsai.OEconnect.Interop.OecFrameHeader
+Bonsai.OEconnect.Interop.OecFrameHeader.Crc16 -> ushort
+Bonsai.OEconnect.Interop.OecFrameHeader.Flags -> ushort
+Bonsai.OEconnect.Interop.OecFrameHeader.HostQpcTicks -> ulong
+Bonsai.OEconnect.Interop.OecFrameHeader.Magic -> uint
+Bonsai.OEconnect.Interop.OecFrameHeader.OecFrameHeader() -> void
+Bonsai.OEconnect.Interop.OecFrameHeader.PayloadLen -> uint
+Bonsai.OEconnect.Interop.OecFrameHeader.SampleIndex -> ulong
+Bonsai.OEconnect.Interop.OecFrameHeader.StreamId -> ushort
+Bonsai.OEconnect.Interop.OecFrameHeader.VersionMajor -> byte
+Bonsai.OEconnect.Interop.OecFrameHeader.VersionMinor -> byte
+Bonsai.OEconnect.Interop.OecHelloBody
+Bonsai.OEconnect.Interop.OecHelloBody.LibVersion -> uint
+Bonsai.OEconnect.Interop.OecHelloBody.OecHelloBody() -> void
+Bonsai.OEconnect.Interop.OecHelloBody.PluginVersion -> uint
+Bonsai.OEconnect.Interop.OecHelloBody.ProtocolMajor -> ushort
+Bonsai.OEconnect.Interop.OecHelloBody.ProtocolMinor -> ushort
+Bonsai.OEconnect.Interop.OecHelloBody.Reserved -> uint
+Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.EBadMagic = -2 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.EFrameTooLarge = -4 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.EInvalidArg = -1 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.ENoSession = -8 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.ENotImplemented = -10 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.EParse = -9 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.ERingEmpty = -6 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.ERingFull = -5 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.ESyscall = -7 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.EVersionMismatch = -3 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStatus.Ok = 0 -> Bonsai.OEconnect.Interop.OecStatus
+Bonsai.OEconnect.Interop.OecStreams
+Bonsai.OEconnect.Operators.FilteredSamples
+Bonsai.OEconnect.Operators.FilteredSamples.FilteredSamples() -> void
+Bonsai.OEconnect.Operators.FilteredSamples.Process() -> System.IObservable<Bonsai.OEconnect.Data.RawBlock>
+Bonsai.OEconnect.Operators.OpenEphysSession
+Bonsai.OEconnect.Operators.OpenEphysSession.OpenEphysSession() -> void
+Bonsai.OEconnect.Operators.OpenEphysSession.Process() -> System.IObservable<Bonsai.OEconnect.Data.SessionStatus>
+Bonsai.OEconnect.Operators.PulseTtl
+Bonsai.OEconnect.Operators.PulseTtl.Endpoint.get -> string
+Bonsai.OEconnect.Operators.PulseTtl.Endpoint.set -> void
+Bonsai.OEconnect.Operators.PulseTtl.Line.get -> byte
+Bonsai.OEconnect.Operators.PulseTtl.Line.set -> void
+Bonsai.OEconnect.Operators.PulseTtl.Process<TSource>(System.IObservable<TSource> source) -> System.IObservable<TSource>
+Bonsai.OEconnect.Operators.PulseTtl.PulseTtl() -> void
+Bonsai.OEconnect.Operators.PulseTtl.WidthMicroseconds.get -> uint
+Bonsai.OEconnect.Operators.PulseTtl.WidthMicroseconds.set -> void
+Bonsai.OEconnect.Operators.RawSamples
+Bonsai.OEconnect.Operators.RawSamples.Process() -> System.IObservable<Bonsai.OEconnect.Data.RawBlock>
+Bonsai.OEconnect.Operators.RawSamples.RawSamples() -> void
+Bonsai.OEconnect.Operators.SampleToHostTime
+Bonsai.OEconnect.Operators.SampleToHostTime.Endpoint.get -> string
+Bonsai.OEconnect.Operators.SampleToHostTime.Endpoint.set -> void
+Bonsai.OEconnect.Operators.SampleToHostTime.Process(System.IObservable<Bonsai.OEconnect.Data.RawBlock> source) -> System.IObservable<(Bonsai.OEconnect.Data.RawBlock block, System.DateTimeOffset time)>
+Bonsai.OEconnect.Operators.SampleToHostTime.SampleToHostTime() -> void
+Bonsai.OEconnect.Operators.SessionSource<T>
+Bonsai.OEconnect.Operators.SessionSource<T>.Endpoint.get -> string
+Bonsai.OEconnect.Operators.SessionSource<T>.Endpoint.set -> void
+Bonsai.OEconnect.Operators.SessionSource<T>.SessionSource() -> void
+Bonsai.OEconnect.Operators.SessionSource<T>.Subscribe(System.Func<Bonsai.OEconnect.Sessions.Session, System.IObservable<T>> selector) -> System.IObservable<T>
+Bonsai.OEconnect.Operators.SetTtl
+Bonsai.OEconnect.Operators.SetTtl.Edge.get -> byte
+Bonsai.OEconnect.Operators.SetTtl.Edge.set -> void
+Bonsai.OEconnect.Operators.SetTtl.Endpoint.get -> string
+Bonsai.OEconnect.Operators.SetTtl.Endpoint.set -> void
+Bonsai.OEconnect.Operators.SetTtl.Line.get -> byte
+Bonsai.OEconnect.Operators.SetTtl.Line.set -> void
+Bonsai.OEconnect.Operators.SetTtl.Process<TSource>(System.IObservable<TSource> source) -> System.IObservable<TSource>
+Bonsai.OEconnect.Operators.SetTtl.SetTtl() -> void
+Bonsai.OEconnect.Operators.Spikes
+Bonsai.OEconnect.Operators.Spikes.Process() -> System.IObservable<Bonsai.OEconnect.Data.SpikeEvent>
+Bonsai.OEconnect.Operators.Spikes.Spikes() -> void
+Bonsai.OEconnect.Operators.StartRecording
+Bonsai.OEconnect.Operators.StartRecording.Directory.get -> string
+Bonsai.OEconnect.Operators.StartRecording.Directory.set -> void
+Bonsai.OEconnect.Operators.StartRecording.Endpoint.get -> string
+Bonsai.OEconnect.Operators.StartRecording.Endpoint.set -> void
+Bonsai.OEconnect.Operators.StartRecording.Prefix.get -> string
+Bonsai.OEconnect.Operators.StartRecording.Prefix.set -> void
+Bonsai.OEconnect.Operators.StartRecording.Process<TSource>(System.IObservable<TSource> source) -> System.IObservable<TSource>
+Bonsai.OEconnect.Operators.StartRecording.StartRecording() -> void
+Bonsai.OEconnect.Operators.StopRecording
+Bonsai.OEconnect.Operators.StopRecording.Endpoint.get -> string
+Bonsai.OEconnect.Operators.StopRecording.Endpoint.set -> void
+Bonsai.OEconnect.Operators.StopRecording.Process<TSource>(System.IObservable<TSource> source) -> System.IObservable<TSource>
+Bonsai.OEconnect.Operators.StopRecording.StopRecording() -> void
+Bonsai.OEconnect.Operators.SyncPoints
+Bonsai.OEconnect.Operators.SyncPoints.Process() -> System.IObservable<Bonsai.OEconnect.Data.SyncPoint>
+Bonsai.OEconnect.Operators.SyncPoints.SyncPoints() -> void
+Bonsai.OEconnect.Operators.ToMat
+Bonsai.OEconnect.Operators.ToMat.Process(System.IObservable<Bonsai.OEconnect.Data.RawBlock> source) -> System.IObservable<OpenCV.Net.Mat>
+Bonsai.OEconnect.Operators.ToMat.ToMat() -> void
+Bonsai.OEconnect.Operators.TtlEvents
+Bonsai.OEconnect.Operators.TtlEvents.Process() -> System.IObservable<Bonsai.OEconnect.Data.TtlEvent>
+Bonsai.OEconnect.Operators.TtlEvents.TtlEvents() -> void
+Bonsai.OEconnect.Sessions.Session
+Bonsai.OEconnect.Sessions.Session.AddRef() -> void
+Bonsai.OEconnect.Sessions.Session.Dispose() -> void
+Bonsai.OEconnect.Sessions.Session.DropCount -> long
+Bonsai.OEconnect.Sessions.Session.Endpoint.get -> string
+Bonsai.OEconnect.Sessions.Session.FrameCount -> long
+Bonsai.OEconnect.Sessions.Session.Negotiated -> bool
+Bonsai.OEconnect.Sessions.Session.PredictQpc(ulong sampleIndex) -> ulong
+Bonsai.OEconnect.Sessions.Session.Release() -> int
+Bonsai.OEconnect.Sessions.Session.RemoteLibVer -> uint
+Bonsai.OEconnect.Sessions.Session.RemoteMajor -> ushort
+Bonsai.OEconnect.Sessions.Session.RemoteMinor -> ushort
+Bonsai.OEconnect.Sessions.Session.RemotePluginVer -> uint
+Bonsai.OEconnect.Sessions.Session.Session(Bonsai.OEconnect.Transport.ITransportClient transport, string endpoint) -> void
+Bonsai.OEconnect.Sessions.Session.StartReader() -> void
+Bonsai.OEconnect.Sessions.Session.Transport.get -> Bonsai.OEconnect.Transport.ITransportClient
+Bonsai.OEconnect.Transport.ITransportClient
+Bonsai.OEconnect.Transport.ITransportClient.ConsumeAck() -> void
+Bonsai.OEconnect.Transport.ITransportClient.ConsumeData() -> void
+Bonsai.OEconnect.Transport.ITransportClient.IsConnected.get -> bool
+Bonsai.OEconnect.Transport.ITransportClient.Name.get -> string
+Bonsai.OEconnect.Transport.ITransportClient.PeekAck() -> System.ReadOnlySpan<byte>
+Bonsai.OEconnect.Transport.ITransportClient.PeekData() -> System.ReadOnlySpan<byte>
+Bonsai.OEconnect.Transport.ITransportClient.PostCmd(System.ReadOnlySpan<byte> frameBytes) -> bool
+Bonsai.OEconnect.Transport.ITransportClient.ProducerHeartbeatNs.get -> ulong
+Bonsai.OEconnect.Transport.ITransportClient.Start(string endpoint) -> bool
+Bonsai.OEconnect.Transport.ITransportClient.Stop() -> void
+const Bonsai.OEconnect.Interop.OecCmds.GetState = 7 -> ushort
+const Bonsai.OEconnect.Interop.OecCmds.PulseTtl = 4 -> ushort
+const Bonsai.OEconnect.Interop.OecCmds.SetTtl = 3 -> ushort
+const Bonsai.OEconnect.Interop.OecCmds.StartAcq = 5 -> ushort
+const Bonsai.OEconnect.Interop.OecCmds.StartRecord = 1 -> ushort
+const Bonsai.OEconnect.Interop.OecCmds.StopAcq = 6 -> ushort
+const Bonsai.OEconnect.Interop.OecCmds.StopRecord = 2 -> ushort
+const Bonsai.OEconnect.Interop.OecStreams.Ack = 33 -> ushort
+const Bonsai.OEconnect.Interop.OecStreams.Cmd = 32 -> ushort
+const Bonsai.OEconnect.Interop.OecStreams.Error = 34 -> ushort
+const Bonsai.OEconnect.Interop.OecStreams.FilteredBlock = 2 -> ushort
+const Bonsai.OEconnect.Interop.OecStreams.Hello = 48 -> ushort
+const Bonsai.OEconnect.Interop.OecStreams.RawBlock = 1 -> ushort
+const Bonsai.OEconnect.Interop.OecStreams.Spike = 3 -> ushort
+const Bonsai.OEconnect.Interop.OecStreams.Sync = 16 -> ushort
+const Bonsai.OEconnect.Interop.OecStreams.TtlEvent = 4 -> ushort
+readonly Bonsai.OEconnect.Sessions.Session.FilteredSubject -> System.Reactive.Subjects.Subject<Bonsai.OEconnect.Data.RawBlock>
+readonly Bonsai.OEconnect.Sessions.Session.RawSubject -> System.Reactive.Subjects.Subject<Bonsai.OEconnect.Data.RawBlock>
+readonly Bonsai.OEconnect.Sessions.Session.SpikeSubject -> System.Reactive.Subjects.Subject<Bonsai.OEconnect.Data.SpikeEvent>
+readonly Bonsai.OEconnect.Sessions.Session.StatusSubject -> System.Reactive.Subjects.Subject<Bonsai.OEconnect.Data.SessionStatus>
+readonly Bonsai.OEconnect.Sessions.Session.SyncSubject -> System.Reactive.Subjects.Subject<Bonsai.OEconnect.Data.SyncPoint>
+readonly Bonsai.OEconnect.Sessions.Session.TtlSubject -> System.Reactive.Subjects.Subject<Bonsai.OEconnect.Data.TtlEvent>
