@@ -5,4 +5,4 @@
 b90b39968480124ac4cf06f56a697a47b7db633cba34ddf9555035344818f410  libshared/oeconnect/include/oeconnect/drift.h           v1.0
 0a269901ae283a22cec494cb6af8f5092a56eb0f823515490eb8d6db32085d7b  libshared/oeconnect/include/oeconnect/sidecar.h         v1.0
 c120aa077fd20f158b3916763d0d07813ba19ffae75654a31e22c919e9f639a2  libshared/oeconnect/include/oeconnect/hello.h           v1.1
-23fe20a387fef67a9ee01f37e791995da1a8072923d47c65d6dc392b2e3007dc  libshared/oeconnect/include/oeconnect/version.h         v1.1
+721f579e858f1c28e42a9a9875a654749750d45fd06e0b9deed5dd45fb4df637  libshared/oeconnect/include/oeconnect/version.h         v1.1

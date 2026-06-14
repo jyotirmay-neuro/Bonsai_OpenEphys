@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>liboeconnect.runtime</id>
-    <version>1.1.0</version>
+    <version>0.0.1</version>
     <authors>OEconnect contributors</authors>
     <description>Native runtime for the OEconnect wire protocol (frame, ringbuf, shm, drift, sidecar, hello). Consumed by Bonsai.OEconnect; can also be used by other .NET clients via P/Invoke.</description>
     <license type="expression">MIT</license>
