@@ -1,4 +1,4 @@
-# OEconnect Wire Protocol — v1.0
+# OEconnect Wire Protocol — v1.1
 
 **Status:** Frozen for v1.x. Layout changes require a major version bump.
 **Authoritative for:** frame layout, ringbuffer layout, ZMQ socket conventions, command/ack codes.
@@ -6,9 +6,9 @@
 
 ## 1. Versions
 
-- Wire spec: 1.0
+- Wire spec: 1.1
 - Wire frame `version_major`: 1
-- Wire frame `version_minor`: 0
+- Wire frame `version_minor`: 1
 
 (Bump the version above before merging any change to §3 (frame layout) or §4 (stream IDs).)
 
@@ -309,3 +309,47 @@ SemVer aligned with `spec/oec-protocol-v1.md` major/minor. Plugin, NuGet,
 and `liboeconnect` all carry the same version. Frame `version_major`
 mismatch ⇒ frame dropped + `ERROR(PROTOCOL_VERSION_MISMATCH)`.
 `version_minor` mismatch ⇒ forward-compatible accept.
+
+## 8. HELLO handshake
+
+Added in protocol v1.1. Lets producer and consumer announce their
+protocol/version up-front so future minor bumps can be negotiated without
+breaking older clients.
+
+### 8.1 Stream id
+
+`OEC_STREAM_HELLO = 0x0030`.
+
+### 8.2 Body layout (16 B, packed, little-endian)
+
+```c
+struct oec_hello_body {
+    uint16_t protocol_major;    // 1
+    uint16_t protocol_minor;    // 1 in this release
+    uint32_t plugin_version;    // (major<<16) | (minor<<8) | patch
+    uint32_t lib_version;       // same packing
+    uint32_t reserved;          // zero on emit; ignored on receive
+};
+```
+
+### 8.3 Timing
+
+Producer SHOULD emit one HELLO immediately after the first ACK ring publish
+on `startAcquisition`. Consumer SHOULD treat absence of HELLO within 2 s of
+session start as "remote is v1.0".
+
+### 8.4 Negotiation rules
+
+- same major + same minor → silent.
+- same major + remote minor > local minor → info-log; treat reserved
+  fields as zero.
+- same major + remote minor < local minor → info-log; do not emit
+  minor-only frames the older side wouldn't understand.
+- different major → consumer raises a fatal error and stops; producer
+  logs and refuses commands.
+
+### 8.5 Backward-compat clause
+
+Protocol v1.0 senders that never emit HELLO remain conformant. Receivers
+that don't recognise `OEC_STREAM_HELLO` MUST route it through their default
+discard arm (not error).
