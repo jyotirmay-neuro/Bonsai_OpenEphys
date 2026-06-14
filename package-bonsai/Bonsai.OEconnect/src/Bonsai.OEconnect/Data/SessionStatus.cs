@@ -8,6 +8,15 @@ public sealed class SessionStatus
     public long   FrameCount  { get; init; }
     public long   DropCount   { get; init; }
     public double EstimatedLagMs { get; init; }
+
+    /* Remote protocol version, populated when a HELLO frame is received.
+     * Falls back to v1.0 if the remote never sends HELLO within 2 s (see
+     * spec/oec-protocol-v1.md §8.3). */
+    public ushort RemoteProtocolMajor { get; init; }
+    public ushort RemoteProtocolMinor { get; init; }
+    public uint   RemotePluginVersion { get; init; }
+    public uint   RemoteLibVersion    { get; init; }
+    public bool   ProtocolNegotiated  { get; init; }
 }
 
 public sealed class OpenEphysConnectionException : System.Exception

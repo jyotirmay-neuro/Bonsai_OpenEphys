@@ -51,6 +51,17 @@ public static class OecStreams
     public const ushort Cmd           = 0x0020;
     public const ushort Ack           = 0x0021;
     public const ushort Error         = 0x0022;
+    public const ushort Hello         = 0x0030;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct OecHelloBody
+{
+    public ushort ProtocolMajor;
+    public ushort ProtocolMinor;
+    public uint   PluginVersion;   // (M<<16)|(m<<8)|p
+    public uint   LibVersion;
+    public uint   Reserved;
 }
 
 public static class OecCmds

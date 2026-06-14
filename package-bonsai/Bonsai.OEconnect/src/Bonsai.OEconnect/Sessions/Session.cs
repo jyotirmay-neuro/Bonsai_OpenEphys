@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Reactive.Subjects;
 using System.Threading;
 using Bonsai.OEconnect.Data;
@@ -28,6 +29,15 @@ public sealed class Session : IDisposable
     public long FrameCount;
     public long DropCount;
 
+    /* HELLO negotiation state (spec v1.1 §8). */
+    public ushort RemoteMajor;
+    public ushort RemoteMinor;
+    public uint   RemotePluginVer;
+    public uint   RemoteLibVer;
+    public bool   Negotiated;
+    private readonly DateTime _startedAt = DateTime.UtcNow;
+    private bool _v10FallbackLogged;
+
     public Session(ITransportClient transport, string endpoint)
     {
         Transport = transport;
@@ -53,6 +63,7 @@ public sealed class Session : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
+            CheckV10Fallback();
             var span = Transport.PeekData();
             if (span.IsEmpty) { Thread.Sleep(1); continue; }
             if (span.Length < sizeof(OecFrameHeader)) { Transport.ConsumeData(); continue; }
@@ -81,11 +92,43 @@ public sealed class Session : IDisposable
                             FpgaSampleRateHz = 30000.0
                         });
                         break;
+                    case OecStreams.Hello:
+                        DispatchHello(p, span.Length);
+                        break;
                 }
                 if ((h.Flags & 0x0002) != 0) Interlocked.Increment(ref DropCount);
             }
             Transport.ConsumeData();
         }
+    }
+
+    private unsafe void DispatchHello(byte* p, int len)
+    {
+        if (len < sizeof(OecFrameHeader) + sizeof(OecHelloBody)) return;
+        var body = *(OecHelloBody*)(p + sizeof(OecFrameHeader));
+        RemoteMajor     = body.ProtocolMajor;
+        RemoteMinor     = body.ProtocolMinor;
+        RemotePluginVer = body.PluginVersion;
+        RemoteLibVer    = body.LibVersion;
+        Negotiated      = true;
+        if (RemoteMajor != 1)
+        {
+            RawSubject.OnError(new OpenEphysConnectionException(
+                Transport.Name, Endpoint, 0,
+                $"OE plugin emits protocol v{RemoteMajor}.{RemoteMinor}; " +
+                "this Bonsai package requires v1.x."));
+        }
+    }
+
+    private void CheckV10Fallback()
+    {
+        if (Negotiated || _v10FallbackLogged) return;
+        if ((DateTime.UtcNow - _startedAt).TotalSeconds <= 2) return;
+        /* Producer never sent HELLO; treat as protocol v1.0. */
+        RemoteMajor = 1;
+        RemoteMinor = 0;
+        _v10FallbackLogged = true;
+        Trace.WriteLine("[OEconnect] no HELLO within 2s -- assuming protocol v1.0");
     }
 
     private unsafe void DispatchBlock(in OecFrameHeader h, byte* p, int len, bool raw)
