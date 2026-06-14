@@ -38,3 +38,7 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(oec_plugin_tests)
+
+add_executable(oec_plugin_synth synth_producer.cc)
+target_link_libraries(oec_plugin_synth PRIVATE oeconnect)
+target_include_directories(oec_plugin_synth PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Source)

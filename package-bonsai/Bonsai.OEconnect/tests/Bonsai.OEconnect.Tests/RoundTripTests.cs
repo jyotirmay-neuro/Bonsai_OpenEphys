@@ -17,33 +17,46 @@ namespace Bonsai.OEconnect.Tests;
 /// </summary>
 public class RoundTripTests
 {
-    private static string? HarnessPath()
-    {
-        var dir = AppContext.BaseDirectory;
-        for (int up = 0; up < 8 && dir != null; ++up, dir = Directory.GetParent(dir)?.FullName)
-        {
-            var candidate = Path.Combine(dir, "..", "..", "build-plugin",
-                                         "Tests", "oec_plugin_tests");
-            if (File.Exists(candidate))   return candidate;
-            if (File.Exists(candidate + ".exe")) return candidate + ".exe";
-        }
-        return null;
-    }
-
     [Fact]
     public void EndToEnd_PluginHarnessFeedsRawSamples()
     {
-        var harness = HarnessPath();
-        if (harness == null)
+        var dir = AppContext.BaseDirectory;
+        string? synth = null;
+        var subdirs = new[] { "", "Debug", "Release", "RelWithDebInfo", "MinSizeRel" };
+        for (int up = 0; up < 10 && dir != null; ++up, dir = Directory.GetParent(dir)?.FullName)
         {
-            /* Skip when plugin tests haven't been built locally. */
-            return;
+            foreach (var sub in subdirs)
+            {
+                foreach (var name in new[] { "oec_plugin_synth", "oec_plugin_synth.exe" })
+                {
+                    var candidate = Path.Combine(dir!, "build-plugin", "Tests", sub, name);
+                    if (File.Exists(candidate)) { synth = candidate; break; }
+                }
+                if (synth != null) break;
+            }
+            if (synth != null) break;
         }
-        /* The harness exits after running its own gtests -- we instead want
-           a long-running synthetic producer. The plugin's test fixture
-           creates a unique region and exits, so for this test we depend on
-           a separate `oec_plugin_synth` binary added by Task 4.x (perf).
-           Until that binary lands, this end-to-end test is intentionally a
-           no-op; full e2e is exercised by the manual latency procedure. */
+        if (synth == null) return;     /* skip when not built */
+
+        var endpoint = "/oeconnect.synth.bonsai-test.shm";
+        var psi = new ProcessStartInfo(synth, $"\"{endpoint}\" 4 32") {
+            RedirectStandardOutput = true, UseShellExecute = false
+        };
+        using var proc = Process.Start(psi)!;
+        try
+        {
+            /* Give the producer a moment to create the shm region. */
+            var firstLine = proc.StandardOutput.ReadLine();
+            Assert.NotNull(firstLine);
+            var op = new RawSamples { Endpoint = "shm://" + endpoint };
+            var seen = 0;
+            using var sub = op.Process().Subscribe(_ => Interlocked.Increment(ref seen));
+            Thread.Sleep(1500);
+            Assert.True(seen > 10, $"expected >10 RawBlock events, got {seen}");
+        }
+        finally
+        {
+            try { proc.Kill(); } catch { }
+        }
     }
 }
