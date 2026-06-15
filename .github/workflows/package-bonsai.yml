@@ -16,9 +16,15 @@ jobs:
           dotnet-version: |
             6.0.x
             8.0.x
+            10.0.x
+      - name: Build native liboeconnect
+        shell: bash
+        run: |
+          cmake -S libshared/oeconnect -B libshared/oeconnect/build -DCMAKE_BUILD_TYPE=Release -DOEC_BUILD_TESTS=OFF
+          cmake --build libshared/oeconnect/build --config Release --parallel
       - name: Restore
-        run: dotnet restore package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.sln
+        run: dotnet restore package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx
       - name: Build
-        run: dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.sln -c Release --no-restore
+        run: dotnet build package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release --no-restore
       - name: Test
-        run: dotnet test package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.sln -c Release --no-build --verbosity normal
+        run: dotnet test package-bonsai/Bonsai.OEconnect/Bonsai.OEconnect.slnx -c Release --no-build --verbosity normal

@@ -36,7 +36,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
-        with: { dotnet-version: '8.0.x' }
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build native liboeconnect
+        run: |
+          cmake -S libshared/oeconnect -B libshared/oeconnect/build -DCMAKE_BUILD_TYPE=Release -DOEC_BUILD_TESTS=OFF
+          cmake --build libshared/oeconnect/build --config Release --parallel
       - name: Float Bonsai.Core to 2.*
         run: |
           sed -i 's@Include="Bonsai.Core" Version="2\.[0-9.]*"@Include="Bonsai.Core" Version="2.*"@' \
@@ -58,7 +65,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
-        with: { dotnet-version: '8.0.x' }
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build native liboeconnect
+        run: |
+          cmake -S libshared/oeconnect -B libshared/oeconnect/build -DCMAKE_BUILD_TYPE=Release -DOEC_BUILD_TESTS=OFF
+          cmake --build libshared/oeconnect/build --config Release --parallel
       - name: Float NetMQ to *
         run: |
           sed -i 's@Include="NetMQ" Version="[0-9.]*"@Include="NetMQ" Version="*"@' \

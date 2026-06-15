@@ -21,6 +21,7 @@ set(WITH_PERF_TOOL OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(BUILD_STATIC ON CACHE BOOL "" FORCE)
 set(WITH_DOC OFF CACHE BOOL "" FORCE)
+set(CPPZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(libzmq
   GIT_REPOSITORY https://github.com/zeromq/libzmq.git
   GIT_TAG        v4.3.5
