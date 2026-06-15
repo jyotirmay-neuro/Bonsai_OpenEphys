@@ -115,7 +115,7 @@ jobs:
           ( cd artifacts/OEconnect-plugin-macOS   && zip -r ../../release/OEconnect-macos.zip   . )
           cp artifacts/Bonsai.OEconnect-nupkg/*.nupkg release/
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release/*
           generate_release_notes: true
