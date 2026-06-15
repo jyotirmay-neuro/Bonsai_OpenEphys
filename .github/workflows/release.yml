@@ -36,7 +36,7 @@ jobs:
           cp build/liboeconnect.so     out/ 2>/dev/null || true
           cp build/liboeconnect.dylib  out/ 2>/dev/null || true
           cp build/Release/oeconnect.dll out/ 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: liboeconnect-${{ runner.os }}
           path: out/
@@ -62,7 +62,7 @@ jobs:
           cp -r build/OEconnect.bundle      out/ 2>/dev/null || true
           cp build/Release/OEconnect.dll    out/ 2>/dev/null || true
           cp build/Release/OEconnect.dylib  out/ 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: OEconnect-plugin-${{ runner.os }}
           path: out/
@@ -94,7 +94,7 @@ jobs:
         run: bash ci/promote-api.sh
       - name: Pack
         run: dotnet pack package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj -c Release -o package-bonsai/nupkg
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Bonsai.OEconnect-nupkg
           path: package-bonsai/nupkg/
