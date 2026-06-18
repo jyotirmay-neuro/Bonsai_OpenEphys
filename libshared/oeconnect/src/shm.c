@@ -96,12 +96,23 @@ oec_status_t oec_shm_open(
 #else
     s->fd = shm_open(name, O_RDWR, 0600);
     if (s->fd < 0) { free(s); return OEC_E_SYSCALL; }
-    s->mapped = mmap(NULL, expected_size, PROT_READ | PROT_WRITE,
+    /* expected_size == 0 means "map the whole existing region" (matches the
+     * Windows MapViewOfFile(..., 0) semantics). POSIX mmap rejects a length of
+     * 0 with EINVAL, so resolve the real size via fstat first. */
+    size_t map_size = expected_size;
+    if (map_size == 0) {
+        struct stat st;
+        if (fstat(s->fd, &st) < 0 || st.st_size <= 0) {
+            close(s->fd); free(s); return OEC_E_SYSCALL;
+        }
+        map_size = (size_t)st.st_size;
+    }
+    s->mapped = mmap(NULL, map_size, PROT_READ | PROT_WRITE,
                      MAP_SHARED, s->fd, 0);
     if (s->mapped == MAP_FAILED) {
         close(s->fd); free(s); return OEC_E_SYSCALL;
     }
-    s->mapped_size = expected_size;
+    s->mapped_size = map_size;
     s->name_copy = strdup(name);
 #endif
 
