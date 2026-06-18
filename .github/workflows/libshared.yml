@@ -1,10 +1,7 @@
 name: libshared
 
 on:
-  push:
-    paths: ['libshared/**', 'spec/**', '.github/workflows/libshared.yml']
-  pull_request:
-    paths: ['libshared/**', 'spec/**', '.github/workflows/libshared.yml']
+  workflow_dispatch:   # manual only (test-release phase: conserve Actions minutes)
 
 jobs:
   build:

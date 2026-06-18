@@ -1,8 +1,6 @@
 name: spec-drift
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:   # manual only (test-release phase: conserve Actions minutes)
 jobs:
   drift:
     runs-on: ubuntu-latest

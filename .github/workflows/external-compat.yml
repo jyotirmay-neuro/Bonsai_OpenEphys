@@ -1,8 +1,6 @@
 name: external-compat
 on:
-  schedule:
-    - cron: '17 4 * * *'   # 04:17 UTC daily
-  workflow_dispatch:
+  workflow_dispatch:   # manual only (test-release phase: conserve Actions minutes)
 
 permissions:
   contents: read

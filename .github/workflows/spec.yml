@@ -1,8 +1,7 @@
 name: spec
 
 on:
-  pull_request:
-    paths: ['spec/**']
+  workflow_dispatch:   # manual only (test-release phase: conserve Actions minutes)
 
 jobs:
   enforce-version-bump:

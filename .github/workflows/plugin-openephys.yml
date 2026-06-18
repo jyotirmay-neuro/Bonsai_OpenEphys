@@ -1,10 +1,7 @@
 name: plugin-openephys
 
 on:
-  push:
-    paths: ['plugin-openephys/**', 'libshared/**', 'spec/**', '.github/workflows/plugin-openephys.yml']
-  pull_request:
-    paths: ['plugin-openephys/**', 'libshared/**', 'spec/**', '.github/workflows/plugin-openephys.yml']
+  workflow_dispatch:   # manual only (test-release phase: conserve Actions minutes)
 
 jobs:
   build:

@@ -1,10 +1,7 @@
 name: package-bonsai
 
 on:
-  push:
-    paths: ['package-bonsai/**', 'libshared/**', 'spec/**', '.github/workflows/package-bonsai.yml']
-  pull_request:
-    paths: ['package-bonsai/**', 'libshared/**', 'spec/**', '.github/workflows/package-bonsai.yml']
+  workflow_dispatch:   # manual only (test-release phase: conserve Actions minutes)
 
 jobs:
   build:
