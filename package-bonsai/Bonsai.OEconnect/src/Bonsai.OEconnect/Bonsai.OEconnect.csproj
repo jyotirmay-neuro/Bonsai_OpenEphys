@@ -27,10 +27,12 @@
   <ItemGroup>
     <PackageReference Include="Bonsai.Core" Version="2.8.0" />
     <PackageReference Include="Bonsai.Dsp" Version="2.8.0" />
-    <PackageReference Include="NetMQ" Version="4.0.1.13" />
+    <PackageReference Include="NetMQ" Version="4.0.4.2" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
-    <PackageReference Include="System.Memory" Version="4.5.5" Condition="'$(TargetFramework)' == 'net472'" />
-    <PackageReference Include="System.Buffers" Version="4.5.1" Condition="'$(TargetFramework)' == 'net472'" />
+    <!-- net472 polyfills. Floors raised to satisfy NetMQ 4.0.4.2's transitive
+         System.Collections.Immutable 10.0.7 -> System.Memory (>= 4.6.3). -->
+    <PackageReference Include="System.Memory" Version="4.6.3" Condition="'$(TargetFramework)' == 'net472'" />
+    <PackageReference Include="System.Buffers" Version="4.6.1" Condition="'$(TargetFramework)' == 'net472'" />
   </ItemGroup>
 
   <ItemGroup>
