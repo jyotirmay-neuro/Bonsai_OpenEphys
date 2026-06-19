@@ -6,7 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(OEC_PLUGIN_BUILD_TESTS  "Build OEconnect plugin unit tests" ON)
-option(OEC_PLUGIN_BUILD_BUNDLE "Build OEconnect JUCE plugin bundle (requires all Source/*.cpp)" OFF)
+
+# NOTE: the loadable OE GUI plugin (OEconnect.dll) is NOT built here. This
+# plugin-GUI version builds plugins inside the GUI CMake tree (link
+# open-ephys.lib, depend on the `open-ephys` target). Build it via the
+# two-stage flow in oe-gui-plugin/ (see oe-gui-plugin/CMakeLists.txt and
+# build-oe-plugin.ps1). This file builds only liboeconnect + the unit tests.
 
 # --- liboeconnect (sibling) ---
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../libshared/oeconnect
@@ -32,52 +37,8 @@ FetchContent_Declare(cppzmq
 )
 FetchContent_MakeAvailable(libzmq cppzmq)
 
-# --- OE plugin-build template ---
-set(GUI_BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/plugin-GUI)
-include(${GUI_BASE_DIR}/CMake/PluginCommon.cmake OPTIONAL RESULT_VARIABLE OEPLUGIN_FOUND)
-
-if(NOT OEPLUGIN_FOUND)
-  message(WARNING
-    "OE plugin SDK not found at ${GUI_BASE_DIR}. "
-    "Submodule init required: git submodule update --init --recursive")
-endif()
-
-if(OEC_PLUGIN_BUILD_BUNDLE)
-  set(OEC_PLUGIN_SOURCES
-    Source/OEconnectProcessor.cpp        # pure-C++ hot path
-    Source/OEconnectJuceProcessor.cpp    # JUCE GenericProcessor wrapper
-    Source/OEconnectEditor.cpp
-    Source/Transport/ShmemTransport.cpp
-    Source/Transport/ZmqTransport.cpp
-    Source/Boards/RhdAcqBoardAdapter.cpp
-    Source/Boards/OnixAdapter.cpp
-    Source/Boards/NeuropixelsAdapter.cpp
-    Source/Boards/FileReaderAdapter.cpp
-    Source/Sync/DriftEmitter.cpp
-    Source/Util/SlowCmdWorker.cpp
-  )
-
-  add_library(OEconnect MODULE ${OEC_PLUGIN_SOURCES})
-  target_include_directories(OEconnect
-    PRIVATE Source
-            ${GUI_BASE_DIR}/Source/Plugins
-            ${GUI_BASE_DIR}/JuceLibraryCode
-  )
-  target_compile_definitions(OEconnect PRIVATE
-    OEC_PLUGIN_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
-    OEC_PLUGIN_VERSION_MINOR=${PROJECT_VERSION_MINOR}
-    OEC_PLUGIN_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-  )
-  target_link_libraries(OEconnect
-    PRIVATE oeconnect libzmq-static cppzmq
-  )
-  set_target_properties(OEconnect PROPERTIES
-    PREFIX ""
-    BUNDLE TRUE
-    BUNDLE_EXTENSION "bundle"
-    OUTPUT_NAME "OEconnect"
-  )
-endif()
+# The loadable OE GUI plugin is built separately against a configured GUI tree
+# (open-ephys.lib + the `open-ephys` target). See oe-gui-plugin/CMakeLists.txt.
 
 if(OEC_PLUGIN_BUILD_TESTS)
   enable_testing()
