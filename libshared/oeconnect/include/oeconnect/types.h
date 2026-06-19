@@ -15,6 +15,9 @@
 
 #if defined(OEC_BUILDING_LIB)
   #define OEC_API OEC_EXPORT
+#elif defined(OEC_STATIC)
+  /* Consumer statically links liboeconnect into its own module: no dllimport. */
+  #define OEC_API
 #else
   #define OEC_API OEC_IMPORT
 #endif

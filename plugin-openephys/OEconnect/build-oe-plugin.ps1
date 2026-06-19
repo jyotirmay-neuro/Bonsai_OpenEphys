@@ -17,7 +17,10 @@ param(
   [string]$Config = "Release",
   [string]$Arch = "x64"
 )
-$ErrorActionPreference = "Stop"
+# NB: do NOT set $ErrorActionPreference='Stop'. cmake/MSBuild write progress and
+# deprecation warnings to stderr; under 'Stop' (especially with 2>&1) PowerShell
+# turns those into terminating errors. We gate on $LASTEXITCODE after each native
+# call and throw explicitly instead.
 $root = $PSScriptRoot
 $gui  = Join-Path $root "external/plugin-GUI"
 $guiBuild = Join-Path $gui "Build"

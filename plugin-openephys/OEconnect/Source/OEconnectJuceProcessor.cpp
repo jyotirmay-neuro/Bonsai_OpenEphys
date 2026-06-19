@@ -36,20 +36,23 @@ extern "C" {
 
 namespace oec::plugin {
 
+/* Defined in OEconnectEditor.cpp (same namespace). Declared at namespace scope
+ * so the call below binds to oec::plugin::createOEconnectEditor, not a
+ * block-scope extern that would resolve to the global namespace. */
+AudioProcessorEditor* createOEconnectEditor(OEconnectJuceProcessor*);
+
 OEconnectJuceProcessor::OEconnectJuceProcessor() : GenericProcessor("OEconnect") {}
 OEconnectJuceProcessor::~OEconnectJuceProcessor() {
     if (transport_) transport_->stop();
 }
 
 AudioProcessorEditor* OEconnectJuceProcessor::createEditor() {
-    /* Concrete editor defined in OEconnectEditor.cpp */
-    extern AudioProcessorEditor* createOEconnectEditor(OEconnectJuceProcessor*);
     return createOEconnectEditor(this);
 }
 
 void OEconnectJuceProcessor::updateSettings() {
     cfg_.num_channels   = getNumInputs();
-    cfg_.sample_rate_hz = getSampleRate();
+    cfg_.sample_rate_hz = (getNumDataStreams() > 0) ? getSampleRate(0) : 30000.0;
     selectBoardAdapter();
 }
 
@@ -156,11 +159,13 @@ bool OEconnectJuceProcessor::startAcquisition() {
         [this](const SlowCmdRequest& req) -> uint16_t {
             switch (req.cmd_id) {
                 case OEC_CMD_START_RECORD:
-                    CoreServices::setRecordingDirectory(juce::String(req.arg1));
-                    /* TODO(impl): the CoreServices method for the file-name
-                       prefix varies across plugin-GUI minor versions.
-                       Look in external/plugin-GUI/Source/CoreServices.h for
-                       the current API and forward req.arg2 to it. */
+                    /* applyToAll=true ignores the nodeId and targets every
+                       Record Node in the chain. */
+                    CoreServices::RecordNode::setRecordingDirectory(
+                        juce::String(req.arg1), /*nodeId=*/0, /*applyToAll=*/true);
+                    /* TODO(impl): forward the file-name prefix (req.arg2) via
+                       CoreServices::setRecordingDirectoryPrependText / ...AppendText
+                       once the desired naming semantics are settled. */
                     CoreServices::setRecordingStatus(true);
                     return OEC_ACK_COMPLETED;
                 case OEC_CMD_STOP_RECORD:
@@ -215,7 +220,9 @@ void OEconnectJuceProcessor::process(AudioBuffer<float>& buffer) {
     const uint64_t s0 = sample_counter_.fetch_add((uint64_t)ns, std::memory_order_relaxed);
     cfg_.num_channels = ch;
     cfg_.block_size   = ns;
-    processBlock(scratch_.data(), s0, cfg_, *transport_, *board_, outbox_);
+    /* Qualify: unqualified 'processBlock' would bind to the inherited
+       GenericProcessor::processBlock member, not our free hot-path function. */
+    oec::plugin::processBlock(scratch_.data(), s0, cfg_, *transport_, *board_, outbox_);
 }
 
 void OEconnectJuceProcessor::applyConfig(const ProcessorConfig& cfg) { cfg_ = cfg; }

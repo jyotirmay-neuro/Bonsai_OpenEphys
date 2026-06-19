@@ -85,13 +85,14 @@ target_include_directories(OEconnect PRIVATE
 
 target_compile_definitions(OEconnect PRIVATE
   OEPLUGIN
+  OEC_STATIC   # liboeconnect is linked statically into this DLL (no dllimport)
   "$<$<PLATFORM_ID:Windows>:JUCE_API=__declspec(dllimport)>"
   OEC_PLUGIN_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
   OEC_PLUGIN_VERSION_MINOR=${PROJECT_VERSION_MINOR}
   OEC_PLUGIN_VERSION_PATCH=${PROJECT_VERSION_PATCH})
 
 target_compile_features(OEconnect PRIVATE cxx_std_17)
-target_link_libraries(OEconnect PRIVATE oeconnect libzmq-static cppzmq)
+target_link_libraries(OEconnect PRIVATE oeconnect libzmq-static cppzmq-static)
 
 if(MSVC)
   if(NOT OPEN_EPHYS_LIB OR NOT EXISTS ${OPEN_EPHYS_LIB})
