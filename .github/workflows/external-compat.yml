@@ -10,7 +10,7 @@ jobs:
   oe-gui-tip:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { submodules: recursive }
       - name: Roll plugin-GUI submodule to tip of main
         run: |
@@ -32,7 +32,7 @@ jobs:
   bonsai-core-floating:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
@@ -61,7 +61,7 @@ jobs:
   netmq-floating:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |

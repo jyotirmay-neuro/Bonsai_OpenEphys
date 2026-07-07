@@ -12,7 +12,7 @@ jobs:
         config: [Debug, Release]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure
         run: cmake -S libshared/oeconnect -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DOEC_BUILD_TESTS=ON
       - name: Build
