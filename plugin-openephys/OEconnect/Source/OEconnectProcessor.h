@@ -13,6 +13,7 @@
 namespace oec::plugin {
 
 struct SlowCmdRequest;   /* fwd; full def in Util/SlowCmdWorker.h */
+class PulseScheduler;    /* fwd; full def in Util/PulseScheduler.h */
 
 /**
  * Processor configuration owned by the editor (UI).
@@ -27,7 +28,11 @@ struct ProcessorConfig {
     double sample_rate_hz  = 30000.0;
     std::string transport_mode = "Auto";           /* "Auto" | "SharedMem" | "Zmq" */
     std::string shm_name;                          /* set by start() */
-    std::string zmq_endpoint = "tcp://*:5557|tcp://*:5558";
+    /* Loopback by default — no unauthenticated exposure beyond this host.
+     * Binding to a routable address (e.g. "tcp://0.0.0.0:5557") requires a
+     * CURVE server key (OEC_ZMQ_CURVE_SECRET); the transport refuses an
+     * unauthenticated non-loopback bind (spec §5.7). */
+    std::string zmq_endpoint = "tcp://127.0.0.1:5557|tcp://127.0.0.1:5558";
 
     /** Called from the audio thread whenever a Bonsai-issued TTL fires.
      *  JUCE wrapper hooks GenericProcessor::addEvent() here so OE's Record
@@ -49,6 +54,7 @@ void processBlock(
     const ProcessorConfig& config,
     ITransport& transport,
     IBoardAdapter& board,
-    AckOutbox& outbox);
+    AckOutbox& outbox,
+    PulseScheduler* pulses = nullptr);
 
 }  // namespace oec::plugin

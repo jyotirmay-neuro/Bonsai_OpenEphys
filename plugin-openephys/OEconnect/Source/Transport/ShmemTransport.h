@@ -31,9 +31,10 @@ public:
     std::string name() const override { return "SharedMem"; }
 
 private:
-    oec_shm_t*     shm_ = nullptr;
-    void*          mapped_ = nullptr;
-    size_t         mapped_size_ = 0;
+    oec_shm_t*           shm_ = nullptr;
+    void*                mapped_ = nullptr;
+    size_t               mapped_size_ = 0;
+    oec_region_header_t* region_header_ = nullptr;
     oec_ringbuf_t* data_ring_ = nullptr;
     oec_ringbuf_t* cmd_ring_  = nullptr;
     oec_ringbuf_t* ack_ring_  = nullptr;

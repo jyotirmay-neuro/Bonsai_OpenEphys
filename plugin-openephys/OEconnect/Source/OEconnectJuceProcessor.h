@@ -10,6 +10,7 @@
 
 #include "OEconnectProcessor.h"
 #include "Util/SlowCmdWorker.h"
+#include "Util/PulseScheduler.h"
 #include <ProcessorHeaders.h>            /* from external/plugin-GUI */
 
 namespace oec::plugin {
@@ -47,6 +48,7 @@ private:
     AckOutbox                       outbox_{1024};
     std::atomic<uint64_t>           sample_counter_{0};
     std::vector<int16_t>            scratch_;
+    PulseScheduler                  pulse_sched_;
 };
 
 }  // namespace oec::plugin

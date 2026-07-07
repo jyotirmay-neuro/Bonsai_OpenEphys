@@ -36,13 +36,12 @@ internal sealed class ShmemClient : ITransportClient
         var shmName = endpoint.StartsWith(scheme, StringComparison.Ordinal)
             ? endpoint.Substring(scheme.Length)
             : endpoint;
-        /* Default sizing per spec §5.7 (matches OEC_DEFAULT_* in ringbuf.h). */
-        var regionSize = NativeMethods.RegionSize(
-            slotSize: 65536u, slotCount: 256u,
-            cmdSlotSize: 4096u, cmdSlotCount: 64u,
-            ackSlotSize: 4096u, ackSlotCount: 64u);
-        if (regionSize == UIntPtr.Zero) return false;
-        var rc = NativeMethods.ShmOpen(shmName, regionSize, out _shm, out _mapped, out _mappedSize);
+        /* Map the WHOLE existing region (expectedSize = 0) rather than assuming
+         * the default geometry — the producer's editor may have reconfigured
+         * slot sizing (spec §4.7). RegionOpen then validates magic/version and
+         * that the header's advertised layout actually fits what we mapped,
+         * so a stale/hostile region can't hand us out-of-bounds ring offsets. */
+        var rc = NativeMethods.ShmOpen(shmName, UIntPtr.Zero, out _shm, out _mapped, out _mappedSize);
         if (rc != OecStatus.Ok) return false;
         if (NativeMethods.RegionOpen(_mapped, _mappedSize, out _regionHeader) != OecStatus.Ok) { Stop(); return false; }
         if (NativeMethods.RingbufAttach(_mapped, 0, out _dataRing) != OecStatus.Ok) { Stop(); return false; }

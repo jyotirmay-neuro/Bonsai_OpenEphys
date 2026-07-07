@@ -1,6 +1,7 @@
 #include "OEconnectProcessor.h"
 #include "Transport/Frame.h"
 #include "Util/SlowCmdWorker.h"
+#include "Util/PulseScheduler.h"
 
 #include <cstring>
 
@@ -69,24 +70,50 @@ void emitAck(ITransport& t, uint32_t cookie, uint16_t status,
     t.publishAck((uint32_t)need);
 }
 
-void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cfg)
+/* Parse START_RECORD args {dir_len_u16, dir[], prefix_len_u16, prefix[]} from
+ * `p` of length `len`. Returns false (rejecting the command) if any declared
+ * length runs past the buffer. */
+bool parseStartRecordArgs(const uint8_t* p, size_t len, SlowCmdRequest& req)
 {
+    if (len < 2) return false;
+    uint16_t dlen = 0;
+    std::memcpy(&dlen, p, 2);
+    if ((size_t)2 + dlen + 2 > len) return false;      /* dir + prefix_len field */
+    req.arg1.assign((const char*)(p + 2), dlen);
+
+    const uint8_t* p2 = p + 2 + dlen;
+    uint16_t plen = 0;
+    std::memcpy(&plen, p2, 2);
+    if ((size_t)(p2 - p) + 2 + plen > len) return false;
+    req.arg2.assign((const char*)(p2 + 2), plen);
+    return true;
+}
+
+void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cfg,
+                  uint64_t block_sample, PulseScheduler* pulses)
+{
+    constexpr size_t kHdr = sizeof(oec_frame_header_t);
     for (;;) {
         uint32_t sz = 0;
         const uint8_t* frame = t.peekCmd(&sz);
         if (!frame) return;
-        if (sz < sizeof(oec_frame_header_t) + 6) { t.consumeCmd(); continue; }
+        /* Header + {cmd_id_u16, cookie_u32} is the minimum a CMD frame can be.
+         * Every field access below is bounds-checked against `sz` before the
+         * read — command frames arrive from an untrusted transport. */
+        if (sz < kHdr + 6) { t.consumeCmd(); continue; }
 
         const auto* h = reinterpret_cast<const oec_frame_header_t*>(frame);
         if (h->stream_id != OEC_STREAM_CMD) { t.consumeCmd(); continue; }
 
-        const uint8_t* body = frame + sizeof(*h);
+        const uint8_t* body = frame + kHdr;
+        const size_t body_len = sz - kHdr;
         uint16_t cmd_id = 0; uint32_t cookie = 0;
         std::memcpy(&cmd_id, body + 0, 2);
         std::memcpy(&cookie, body + 2, 4);
 
         switch (cmd_id) {
             case OEC_CMD_SET_TTL: {
+                if (body_len < 8) { emitAck(t, cookie, OEC_ACK_BAD_ARG, 0); break; }
                 uint8_t line = body[6];
                 uint8_t edge = body[7];
                 uint64_t s = board.setTtl(line, edge != 0);
@@ -95,10 +122,22 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cf
                 break;
             }
             case OEC_CMD_PULSE_TTL: {
+                /* Body: {line_u8, edge_u8, width_us_u32}. */
+                if (body_len < 12) { emitAck(t, cookie, OEC_ACK_BAD_ARG, 0); break; }
                 uint8_t line = body[6];
                 uint8_t edge = body[7];
-                uint64_t s = board.setTtl(line, edge != 0);
-                if (cfg.on_ttl_emit) cfg.on_ttl_emit(line, edge, s);
+                uint32_t width_us = 0;
+                std::memcpy(&width_us, body + 8, 4);
+                uint64_t s;
+                if (pulses) {
+                    pulses->arm(board, line, edge != 0, width_us,
+                                block_sample, cfg.sample_rate_hz, cfg.on_ttl_emit);
+                    s = block_sample;
+                } else {
+                    /* No scheduler (e.g. unit test): assert only. */
+                    s = board.setTtl(line, edge != 0);
+                    if (cfg.on_ttl_emit) cfg.on_ttl_emit(line, edge, s);
+                }
                 emitAck(t, cookie, OEC_ACK_OK, s);
                 break;
             }
@@ -113,17 +152,14 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cf
                 SlowCmdRequest req;
                 req.cmd_id = cmd_id;
                 req.cookie = cookie;
-                if (cmd_id == OEC_CMD_START_RECORD &&
-                    sz >= sizeof(oec_frame_header_t) + 6 + 4)
-                {
-                    const uint8_t* p = body + 6;
-                    uint16_t dlen = 0;
-                    std::memcpy(&dlen, p, 2);
-                    req.arg1.assign((const char*)(p + 2), dlen);
-                    const uint8_t* p2 = p + 2 + dlen;
-                    uint16_t plen = 0;
-                    std::memcpy(&plen, p2, 2);
-                    req.arg2.assign((const char*)(p2 + 2), plen);
+                if (cmd_id == OEC_CMD_START_RECORD) {
+                    /* Body: {dir_len_u16, dir[], prefix_len_u16, prefix[]}.
+                     * Validate every length against the remaining bytes before
+                     * copying — a hostile frame must not over-read the slot. */
+                    if (!parseStartRecordArgs(body + 6, body_len - 6, req)) {
+                        emitAck(t, cookie, OEC_ACK_BAD_ARG, 0);
+                        break;
+                    }
                 }
                 if (cfg.slow_enqueue) cfg.slow_enqueue(std::move(req));
                 emitAck(t, cookie, OEC_ACK_PENDING, 0);
@@ -137,22 +173,45 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cf
     }
 }
 
+/* SYNC body carried on the data ring (spec §3.1). */
+#pragma pack(push, 1)
+struct oec_sync_body {
+    uint64_t qpc_freq_hz;
+    double   fpga_sample_rate_hz;
+};
+#pragma pack(pop)
+
 void drainAckOutbox(ITransport& t, AckOutbox& outbox)
 {
     AckEntry e{};
     while (outbox.tryPop(e)) {
+        if (e.cmd_id == OEC_STREAM_SYNC) {
+            /* SYNC belongs on the DATA ring (spec §4.5), not the ack ring.
+             * Emit the periodic heartbeat with its {qpc_freq, sample_rate}
+             * body so late subscribers can reconstruct the clock mapping. */
+            uint32_t cap = 0;
+            uint8_t* slot = t.acquireDataSlot(&cap, /*dropOldest=*/false);
+            if (!slot) continue;   /* data ring momentarily full; skip this tick */
+            oec_sync_body sb{ e.qpc_freq_hz, e.fpga_sample_rate_hz };
+            const size_t need = sizeof(oec_frame_header_t) + sizeof(sb);
+            if (cap < need) continue;
+            auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
+            oec_frame_init(h, OEC_STREAM_SYNC, (uint32_t)sizeof(sb),
+                           e.sample_index, e.host_qpc_ticks, 0);
+            std::memcpy(slot + sizeof(*h), &sb, sizeof(sb));
+            t.publishData((uint32_t)need);
+            continue;
+        }
         uint32_t cap = 0;
         uint8_t* slot = t.acquireAckSlot(&cap);
         if (!slot) break;
-        const uint16_t stream = (e.cmd_id == OEC_STREAM_SYNC) ? OEC_STREAM_SYNC
-                                                              : OEC_STREAM_ACK;
         struct { uint32_t cookie; uint16_t status; } body{ e.cookie, e.status };
-        const uint32_t payload = (stream == OEC_STREAM_SYNC) ? 0u : (uint32_t)sizeof(body);
+        const uint32_t payload = (uint32_t)sizeof(body);
         const size_t need = sizeof(oec_frame_header_t) + payload;
         if (cap < need) break;
         auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
-        oec_frame_init(h, stream, payload, e.sample_index, e.host_qpc_ticks, 0);
-        if (payload) std::memcpy(slot + sizeof(*h), &body, sizeof(body));
+        oec_frame_init(h, OEC_STREAM_ACK, payload, e.sample_index, e.host_qpc_ticks, 0);
+        std::memcpy(slot + sizeof(*h), &body, sizeof(body));
         t.publishAck((uint32_t)need);
     }
 }
@@ -165,9 +224,16 @@ void processBlock(
     const ProcessorConfig& cfg,
     ITransport& transport,
     IBoardAdapter& board,
-    AckOutbox& outbox)
+    AckOutbox& outbox,
+    PulseScheduler* pulses)
 {
-    drainCmdRing(transport, board, cfg);
+    /* Clear any TTL pulses whose width has elapsed by the end of this block. */
+    if (pulses) {
+        const uint64_t block_end = sample_index + (uint64_t)cfg.block_size;
+        pulses->serviceDue(block_end, board, cfg.on_ttl_emit);
+    }
+
+    drainCmdRing(transport, board, cfg, sample_index, pulses);
     drainAckOutbox(transport, outbox);
 
     if (cfg.enable_raw) {

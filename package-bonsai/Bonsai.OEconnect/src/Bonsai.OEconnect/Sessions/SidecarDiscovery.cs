@@ -16,11 +16,17 @@ internal static class SidecarDiscovery
 
     public record struct Sidecar(int Pid, string Shm, string Zmq, ulong StartedNs);
 
-    public static Sidecar? FindNewestLive(string dir, int maxAgeSeconds)
+    /// <summary>
+    /// Returns the sidecar with the newest start time. The sidecar is only a
+    /// pointer to a session's endpoints; its <c>started_unix_ns</c> is fixed at
+    /// launch and must NOT be used as a liveness signal (a healthy session that
+    /// has run for more than a few seconds would otherwise look "dead"). Actual
+    /// liveness is verified after connecting, via the shared-region
+    /// <c>producer_heartbeat_ns</c> the producer refreshes ~1 Hz.
+    /// </summary>
+    public static Sidecar? FindNewest(string dir)
     {
         Sidecar? newest = null;
-        var cutoffNs = (ulong)((DateTimeOffset.UtcNow.AddSeconds(-maxAgeSeconds)).ToUnixTimeMilliseconds() * 1_000_000);
-
         foreach (var f in Directory.EnumerateFiles(dir, "*.json"))
         {
             try
@@ -28,13 +34,11 @@ internal static class SidecarDiscovery
                 using var s = File.OpenRead(f);
                 using var doc = JsonDocument.Parse(s);
                 var root = doc.RootElement;
-                var started = root.GetProperty("started_unix_ns").GetUInt64();
-                if (started < cutoffNs) continue;
                 var sc = new Sidecar(
                     root.GetProperty("pid").GetInt32(),
                     root.GetProperty("shm_region").GetString() ?? "",
                     root.GetProperty("zmq_fallback_endpoint").GetString() ?? "",
-                    started);
+                    root.GetProperty("started_unix_ns").GetUInt64());
                 if (newest is null || sc.StartedNs > newest.Value.StartedNs)
                     newest = sc;
             }

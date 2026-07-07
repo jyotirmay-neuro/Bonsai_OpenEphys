@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <mutex>
@@ -22,6 +23,18 @@ constexpr size_t kRingSlots   = 1024;
 constexpr size_t kSlotBytes   = 65536;
 constexpr int    kPubHwm      = 1024;
 constexpr int    kHeartbeatMs = 500;
+
+/* A bind target is loopback-only if it stays on this host: TCP to 127.x /
+ * ::1 / localhost, or the kernel-local ipc:// and inproc:// schemes. Anything
+ * else (0.0.0.0, *, a routable IP) is externally reachable and, per spec §5.7,
+ * must be CURVE-authenticated. */
+bool is_loopback_endpoint(const std::string& ep) {
+    if (ep.rfind("ipc://", 0) == 0 || ep.rfind("inproc://", 0) == 0) return true;
+    if (ep.find("127.0.0.1") != std::string::npos) return true;
+    if (ep.find("[::1]") != std::string::npos || ep.find("::1") != std::string::npos) return true;
+    if (ep.find("localhost") != std::string::npos) return true;
+    return false;
+}
 
 /* Simple bounded SPSC vector ring used as the in-process audio->shipper buffer. */
 struct LocalRing {
@@ -98,7 +111,25 @@ bool ZmqTransport::start(const std::string& endpoint_pair) {
     const std::string pub_ep = endpoint_pair.substr(0, sep);
     const std::string rep_ep = endpoint_pair.substr(sep + 1);
 
+    /* Refuse an unauthenticated bind to any externally reachable address.
+     * CURVE server key comes from OEC_ZMQ_CURVE_SECRET (Z85, 40 chars). */
+    const bool loopback = is_loopback_endpoint(pub_ep) && is_loopback_endpoint(rep_ep);
+    const char* curve_secret = std::getenv("OEC_ZMQ_CURVE_SECRET");
+    if (!loopback && (!curve_secret || std::strlen(curve_secret) != 40)) {
+        /* Non-loopback bind without a valid CURVE key: fail closed rather than
+         * expose the neural data + control channel to the network. */
+        return false;
+    }
+
     try {
+        if (!loopback && curve_secret) {
+            /* Both sockets act as CURVE servers; clients must present the
+             * matching public key. */
+            impl_->pub.set(zmq::sockopt::curve_server, true);
+            impl_->pub.set(zmq::sockopt::curve_secretkey, std::string(curve_secret));
+            impl_->rep.set(zmq::sockopt::curve_server, true);
+            impl_->rep.set(zmq::sockopt::curve_secretkey, std::string(curve_secret));
+        }
         impl_->pub.set(zmq::sockopt::sndhwm, kPubHwm);
         impl_->pub.bind(pub_ep);
         impl_->rep.set(zmq::sockopt::heartbeat_ivl, kHeartbeatMs);

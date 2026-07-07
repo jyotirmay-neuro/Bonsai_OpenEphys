@@ -18,11 +18,16 @@ namespace {
 uint64_t qpc_now() {
     LARGE_INTEGER c; QueryPerformanceCounter(&c); return (uint64_t)c.QuadPart;
 }
+uint64_t qpc_freq() {
+    LARGE_INTEGER f; QueryPerformanceFrequency(&f); return (uint64_t)f.QuadPart;
+}
 #else
 uint64_t qpc_now() {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC_RAW, &t);
     return (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec;
 }
+/* qpc_now() returns nanoseconds on POSIX, so the tick rate is 1e9 Hz. */
+uint64_t qpc_freq() { return 1000000000ull; }
 #endif
 }  // namespace
 
@@ -48,6 +53,8 @@ void DriftEmitter::loop() {
         e.status = 0;
         e.sample_index = sample_index_.load(std::memory_order_relaxed);
         e.host_qpc_ticks = qpc_now();
+        e.qpc_freq_hz = qpc_freq();
+        e.fpga_sample_rate_hz = sample_rate_;
         outbox_.tryPush(e);
         std::this_thread::sleep_for(seconds(1));
     }

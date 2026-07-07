@@ -1,43 +1,16 @@
 #include "OEconnectEditor.h"
+#include <cstdio>
 
 namespace oec::plugin {
 
+#define OECDIAG(msg) do { std::FILE* _f = std::fopen("oecdiag.log", "a"); \
+    if (_f) { std::fprintf(_f, "%s\n", msg); std::fclose(_f); } } while (0)
+
 OEconnectEditor::OEconnectEditor(GenericProcessor* p) : GenericEditor(p) {
-    transport_box_.addItem("Auto",      1);
-    transport_box_.addItem("SharedMem", 2);
-    transport_box_.addItem("Zmq",       3);
-    transport_box_.setSelectedId(1);
-    addAndMakeVisible(transport_box_);
-
-    zmq_port_.setText("5557");
-    bind_addr_.setText("127.0.0.1");
-    addAndMakeVisible(zmq_port_);
-    addAndMakeVisible(bind_addr_);
-    addAndMakeVisible(auth_toggle_);
-
-    stream_raw_.setToggleState(true, dontSendNotification);
-    stream_filt_.setToggleState(true, dontSendNotification);
-    stream_spk_.setToggleState(true, dontSendNotification);
-    stream_ttl_.setToggleState(true, dontSendNotification);
-    addAndMakeVisible(stream_raw_);
-    addAndMakeVisible(stream_filt_);
-    addAndMakeVisible(stream_spk_);
-    addAndMakeVisible(stream_ttl_);
-
-    block_size_.addItem("16 samp", 1);
-    block_size_.addItem("32 samp", 2);
-    block_size_.addItem("64 samp", 3);
-    block_size_.setSelectedId(2);
-    addAndMakeVisible(block_size_);
-
-    slot_count_.setText("256");
-    addAndMakeVisible(slot_count_);
-
-    addAndMakeVisible(status_);
-    status_.setText("idle", dontSendNotification);
-
+    OECDIAG("editor ctor enter");
+    /* BISECT(test1): minimal editor — no custom components, no timer. */
     desiredWidth = 280;
-    startTimer(500);  /* refresh status every 500 ms */
+    OECDIAG("editor ctor exit");
 }
 
 void OEconnectEditor::timerCallback() {
