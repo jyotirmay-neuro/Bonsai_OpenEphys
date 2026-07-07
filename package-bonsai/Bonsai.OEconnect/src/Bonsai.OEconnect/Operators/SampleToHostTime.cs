@@ -24,11 +24,10 @@ public class SampleToHostTime
         {
             var session = SessionRegistry.Acquire(Endpoint);
             return source
-                .Select(b => (b, FromQpc(session.PredictQpc(b.SampleIndex))))
+                .Select(b => (b, session.TrySampleToHostTime(b.SampleIndex, out var t)
+                                 ? t
+                                 : DateTimeOffset.MinValue))
                 .Finally(() => SessionRegistry.Release(Endpoint, session));
         });
     }
-
-    private static DateTimeOffset FromQpc(ulong qpc)
-        => DateTimeOffset.FromUnixTimeMilliseconds((long)(qpc / 1_000_000UL));
 }

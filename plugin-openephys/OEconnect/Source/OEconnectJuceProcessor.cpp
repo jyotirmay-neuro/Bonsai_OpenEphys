@@ -8,6 +8,7 @@
 #include "Transport/ZmqTransport.h"
 
 #include <cstring>
+#include <cstdio>
 
 extern "C" {
 #include "oeconnect/sidecar.h"
@@ -36,42 +37,55 @@ extern "C" {
 
 namespace oec::plugin {
 
+/* DIAG: flush a marker to oecdiag.log (fclose guarantees flush even before a crash). */
+#define OECDIAG(msg) do { std::FILE* _f = std::fopen("oecdiag.log", "a"); \
+    if (_f) { std::fprintf(_f, "%s\n", msg); std::fclose(_f); } } while (0)
+
 /* Defined in OEconnectEditor.cpp (same namespace). Declared at namespace scope
  * so the call below binds to oec::plugin::createOEconnectEditor, not a
  * block-scope extern that would resolve to the global namespace. */
 AudioProcessorEditor* createOEconnectEditor(OEconnectJuceProcessor*);
 
-OEconnectJuceProcessor::OEconnectJuceProcessor() : GenericProcessor("OEconnect") {}
+OEconnectJuceProcessor::OEconnectJuceProcessor() : GenericProcessor("OEconnect") { OECDIAG("ctor done"); }
 OEconnectJuceProcessor::~OEconnectJuceProcessor() {
     if (transport_) transport_->stop();
 }
 
 AudioProcessorEditor* OEconnectJuceProcessor::createEditor() {
-    return createOEconnectEditor(this);
+    OECDIAG("createEditor enter");
+    auto* e = createOEconnectEditor(this);
+    OECDIAG("createEditor exit");
+    return e;
 }
 
 void OEconnectJuceProcessor::updateSettings() {
+    OECDIAG("updateSettings enter");
     cfg_.num_channels   = getNumInputs();
+    OECDIAG("updateSettings after getNumInputs");
     cfg_.sample_rate_hz = (getNumDataStreams() > 0) ? getSampleRate(0) : 30000.0;
+    OECDIAG("updateSettings after getSampleRate");
     selectBoardAdapter();
+    OECDIAG("updateSettings after selectBoardAdapter");
 }
 
 void OEconnectJuceProcessor::selectBoardAdapter() {
+    OECDIAG("selectBoardAdapter enter");
     GenericProcessor* src = getSourceNode();
-    if (!src) { board_ = std::make_unique<FileReaderAdapter>("ttl_out_log.csv"); return; }
+    if (!src) { board_ = std::make_unique<FileReaderAdapter>("ttl_out_log.csv"); OECDIAG("selectBoardAdapter no-src"); return; }
     const String n = src->getName();
     if      (n.containsIgnoreCase("rhythm"))      board_ = std::make_unique<RhdAcqBoardAdapter>(src);
     else if (n.containsIgnoreCase("onix"))        board_ = std::make_unique<OnixAdapter>(src);
     else if (n.containsIgnoreCase("neuropixels")) board_ = std::make_unique<NeuropixelsAdapter>(src, nullptr);
     else if (n.containsIgnoreCase("file reader")) board_ = std::make_unique<FileReaderAdapter>("ttl_out_log.csv");
     else                                          board_ = std::make_unique<FileReaderAdapter>("ttl_out_log.csv");
+    OECDIAG("selectBoardAdapter end");
 }
 
 void OEconnectJuceProcessor::selectTransport() {
     if (cfg_.transport_mode == "Zmq") {
         transport_ = std::make_unique<ZmqTransport>();
         transport_->start(cfg_.zmq_endpoint);
-    } else {
+    } else {   /* "Auto" and "SharedMem" both prefer shmem, fall back to ZMQ. */
         char name[64];
         oec_shm_make_name((int)getpid(), name, sizeof(name));
         cfg_.shm_name = name;
@@ -222,7 +236,8 @@ void OEconnectJuceProcessor::process(AudioBuffer<float>& buffer) {
     cfg_.block_size   = ns;
     /* Qualify: unqualified 'processBlock' would bind to the inherited
        GenericProcessor::processBlock member, not our free hot-path function. */
-    oec::plugin::processBlock(scratch_.data(), s0, cfg_, *transport_, *board_, outbox_);
+    oec::plugin::processBlock(scratch_.data(), s0, cfg_, *transport_, *board_,
+                              outbox_, &pulse_sched_);
 }
 
 void OEconnectJuceProcessor::applyConfig(const ProcessorConfig& cfg) { cfg_ = cfg; }

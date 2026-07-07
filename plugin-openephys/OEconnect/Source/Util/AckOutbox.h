@@ -9,9 +9,12 @@ namespace oec::plugin {
 struct AckEntry {
     uint32_t cookie;
     uint16_t status;
-    uint16_t cmd_id;
+    uint16_t cmd_id;              /* repurposed as stream id for SYNC entries */
     uint64_t sample_index;
     uint64_t host_qpc_ticks;
+    /* SYNC-only payload (spec §3.1 SYNC body). Ignored for ACK entries. */
+    uint64_t qpc_freq_hz;
+    double   fpga_sample_rate_hz;
 };
 
 /**

@@ -90,9 +90,21 @@ oec_status_t oec_shm_open(
 #if defined(_WIN32)
     s->mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, name);
     if (!s->mapping) { free(s); return OEC_E_SYSCALL; }
+    /* expected_size == 0 means "map the whole existing section". */
     s->mapped = MapViewOfFile(s->mapping, FILE_MAP_ALL_ACCESS, 0, 0, expected_size);
     if (!s->mapped) { CloseHandle(s->mapping); free(s); return OEC_E_SYSCALL; }
-    s->mapped_size = expected_size;
+    if (expected_size == 0) {
+        /* MapViewOfFile(...,0) maps to the end of the section; recover the
+         * real committed size so callers (and oec_region_open) can bounds-check. */
+        MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery(s->mapped, &mbi, sizeof(mbi)) == 0) {
+            UnmapViewOfFile(s->mapped); CloseHandle(s->mapping); free(s);
+            return OEC_E_SYSCALL;
+        }
+        s->mapped_size = (size_t)mbi.RegionSize;
+    } else {
+        s->mapped_size = expected_size;
+    }
 #else
     s->fd = shm_open(name, O_RDWR, 0600);
     if (s->fd < 0) { free(s); return OEC_E_SYSCALL; }

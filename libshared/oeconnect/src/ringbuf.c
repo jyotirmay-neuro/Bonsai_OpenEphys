@@ -125,6 +125,19 @@ oec_status_t oec_region_open(void *mem, size_t mem_len, oec_region_header_t **ou
     oec_region_header_t *h = (oec_region_header_t *)mem;
     if (h->magic != OEC_REGION_MAGIC) return OEC_E_BAD_MAGIC;
     if (h->version_major != OEC_PROTOCOL_VERSION_MAJOR) return OEC_E_VERSION_MISMATCH;
+
+    /* Never trust the mapped header's sizing without checking it fits the
+     * region we actually mapped. A stale or hostile producer can advertise
+     * slot geometry whose computed layout runs past mem_len; attaching to it
+     * would hand out ring offsets that read/write out of bounds. */
+    ring_layout_t d, c, a;
+    size_t total = 0;
+    if (compute_layout(h->slot_size, h->slot_count,
+                       h->cmd_slot_size, h->cmd_slot_count,
+                       h->ack_slot_size, h->ack_slot_count,
+                       &d, &c, &a, &total) != 0) return OEC_E_INVALID_ARG;
+    if (total > mem_len) return OEC_E_INVALID_ARG;
+
     *out_header = h;
     return OEC_OK;
 }
@@ -171,8 +184,20 @@ void *oec_ringbuf_acquire(oec_ringbuf_t *rb, int drop_oldest, uint32_t *out_slot
     uint64_t c = atomic_load_explicit(cons_idx(rb), memory_order_acquire);
     if (p - c >= rb->lo.slot_count) {
         if (!drop_oldest) return NULL;
-        atomic_store_explicit(cons_idx(rb), c + 1, memory_order_release);
-        c = c + 1;
+        /* Evict the oldest slot. The consumer is the normal writer of
+         * cons_idx, so a plain store here can lose-update a concurrent
+         * consume() and resurrect an already-consumed slot. Use CAS so we
+         * only advance if cons is still where we observed it; if the consumer
+         * moved on, re-read and re-check whether the ring is still full. */
+        while (p - c >= rb->lo.slot_count) {
+            if (atomic_compare_exchange_weak_explicit(
+                    cons_idx(rb), &c, c + 1,
+                    memory_order_release, memory_order_acquire)) {
+                c = c + 1;
+                break;
+            }
+            /* c reloaded by CAS on failure; loop re-tests fullness. */
+        }
     }
     uint8_t *slot = rb->base + rb->lo.ring_off
                   + (size_t)(p % rb->lo.slot_count) * rb->lo.slot_size;

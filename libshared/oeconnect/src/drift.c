@@ -6,7 +6,29 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The window is written by the transport reader thread (add) and read by
+ * operator threads (fit/predict), so every accessor takes a lock. This is not
+ * a hot path: adds run at the SYNC cadence (~1 Hz) and predicts at the
+ * SampleToHostTime operator rate, both far below the data-frame rate. */
+#if defined(_WIN32)
+  #define WIN32_LEAN_AND_MEAN
+  #include <windows.h>
+  typedef CRITICAL_SECTION oec_lock_t;
+  static void lock_init(oec_lock_t *l)   { InitializeCriticalSection(l); }
+  static void lock_free(oec_lock_t *l)   { DeleteCriticalSection(l); }
+  static void lock_acq(oec_lock_t *l)    { EnterCriticalSection(l); }
+  static void lock_rel(oec_lock_t *l)    { LeaveCriticalSection(l); }
+#else
+  #include <pthread.h>
+  typedef pthread_mutex_t oec_lock_t;
+  static void lock_init(oec_lock_t *l)   { pthread_mutex_init(l, NULL); }
+  static void lock_free(oec_lock_t *l)   { pthread_mutex_destroy(l); }
+  static void lock_acq(oec_lock_t *l)    { pthread_mutex_lock(l); }
+  static void lock_rel(oec_lock_t *l)    { pthread_mutex_unlock(l); }
+#endif
+
 struct oec_drift_fit {
+    oec_lock_t lock;
     double sample[OEC_DRIFT_WINDOW];
     double qpc[OEC_DRIFT_WINDOW];
     int    count;
@@ -18,27 +40,41 @@ struct oec_drift_fit {
 };
 
 oec_drift_fit_t *oec_drift_create(void) {
-    return (oec_drift_fit_t *)calloc(1, sizeof(oec_drift_fit_t));
+    oec_drift_fit_t *f = (oec_drift_fit_t *)calloc(1, sizeof(oec_drift_fit_t));
+    if (f) lock_init(&f->lock);
+    return f;
 }
 
-void oec_drift_destroy(oec_drift_fit_t *f) { free(f); }
+void oec_drift_destroy(oec_drift_fit_t *f) {
+    if (!f) return;
+    lock_free(&f->lock);
+    free(f);
+}
 
 void oec_drift_add(oec_drift_fit_t *f, uint64_t sample_index, uint64_t qpc) {
     if (!f) return;
+    lock_acq(&f->lock);
     f->sample[f->head] = (double)sample_index;
     f->qpc[f->head]    = (double)qpc;
     f->head = (f->head + 1) % OEC_DRIFT_WINDOW;
     if (f->count < OEC_DRIFT_WINDOW) ++f->count;
+    lock_rel(&f->lock);
 }
 
 int oec_drift_count(const oec_drift_fit_t *f) {
-    return f ? f->count : 0;
+    if (!f) return 0;
+    oec_drift_fit_t *m = (oec_drift_fit_t *)f;
+    lock_acq(&m->lock);
+    int n = m->count;
+    lock_rel(&m->lock);
+    return n;
 }
 
 oec_status_t oec_drift_fit(const oec_drift_fit_t *f_const, double *out_a, double *out_b) {
     if (!f_const) return OEC_E_INVALID_ARG;
-    if (f_const->count < 2) return OEC_E_PARSE;
     oec_drift_fit_t *f = (oec_drift_fit_t *)f_const;
+    lock_acq(&f->lock);
+    if (f->count < 2) { lock_rel(&f->lock); return OEC_E_PARSE; }
 
     double sx = 0, sy = 0, sxx = 0, sxy = 0;
     int n = f->count;
@@ -49,7 +85,7 @@ oec_status_t oec_drift_fit(const oec_drift_fit_t *f_const, double *out_a, double
         sxy += f->sample[i] * f->qpc[i];
     }
     double denom = n * sxx - sx * sx;
-    if (denom == 0.0) return OEC_E_PARSE;
+    if (denom == 0.0) { lock_rel(&f->lock); return OEC_E_PARSE; }
     double a = (n * sxy - sx * sy) / denom;
     double b = (sy - a * sx) / n;
 
@@ -63,22 +99,38 @@ oec_status_t oec_drift_fit(const oec_drift_fit_t *f_const, double *out_a, double
     f->fitted = 1;
     if (out_a) *out_a = a;
     if (out_b) *out_b = b;
+    lock_rel(&f->lock);
     return OEC_OK;
 }
 
 void oec_drift_reset(oec_drift_fit_t *f) {
     if (!f) return;
-    memset(f, 0, sizeof(*f));
+    lock_acq(&f->lock);
+    f->count = 0; f->head = 0; f->fitted = 0;
+    f->a = f->b = f->rms = 0.0;
+    memset(f->sample, 0, sizeof(f->sample));
+    memset(f->qpc, 0, sizeof(f->qpc));
+    lock_rel(&f->lock);
 }
 
 uint64_t oec_drift_predict_qpc(const oec_drift_fit_t *f, uint64_t sample_index) {
-    if (!f || !f->fitted) return 0;
-    double v = f->a * (double)sample_index + f->b;
-    if (v < 0) return 0;
-    return (uint64_t)(v + 0.5);
+    if (!f) return 0;
+    oec_drift_fit_t *m = (oec_drift_fit_t *)f;
+    lock_acq(&m->lock);
+    uint64_t out = 0;
+    if (m->fitted) {
+        double v = m->a * (double)sample_index + m->b;
+        if (v >= 0) out = (uint64_t)(v + 0.5);
+    }
+    lock_rel(&m->lock);
+    return out;
 }
 
 double oec_drift_residual_rms(const oec_drift_fit_t *f) {
-    if (!f || !f->fitted) return -1.0;
-    return f->rms;
+    if (!f) return -1.0;
+    oec_drift_fit_t *m = (oec_drift_fit_t *)f;
+    lock_acq(&m->lock);
+    double r = m->fitted ? m->rms : -1.0;
+    lock_rel(&m->lock);
+    return r;
 }
