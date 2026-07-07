@@ -11,7 +11,7 @@ jobs:
   protocol-compat:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Re-run drift check before any artifact is built
         run: bash ci/check-drift.sh
 
@@ -22,7 +22,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure
         run: cmake -S libshared/oeconnect -B build -DCMAKE_BUILD_TYPE=Release -DOEC_BUILD_TESTS=OFF
       - name: Build
@@ -48,7 +48,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Configure
@@ -71,7 +71,7 @@ jobs:
     needs: build-libshared
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
@@ -103,7 +103,7 @@ jobs:
     needs: [build-plugin, pack-bonsai]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: artifacts/
