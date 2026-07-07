@@ -50,3 +50,10 @@ artifacts/
 # NuGet output
 package-bonsai/nupkg/
 *.nupkg
+
+# CMake / build output trees (generated; do not commit)
+build-plugin/
+build-libshared/
+build-fix/
+build-oe-plugin/
+dist/
