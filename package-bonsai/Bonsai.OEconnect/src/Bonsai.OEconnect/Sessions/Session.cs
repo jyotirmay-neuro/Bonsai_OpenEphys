@@ -164,7 +164,7 @@ public sealed class Session : IDisposable
                         DispatchError(h, p, span.Length);
                         break;
                 }
-                if ((h.Flags & 0x0002) != 0) Interlocked.Increment(ref DropCount);
+                if ((h.Flags & OecFlags.LostData) != 0) Interlocked.Increment(ref DropCount);
             }
             Transport.ConsumeData();
         }

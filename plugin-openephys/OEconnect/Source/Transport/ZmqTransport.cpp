@@ -89,8 +89,11 @@ struct ZmqTransport::Impl {
     zmq::socket_t  pub{ctx, zmq::socket_type::pub};
     zmq::socket_t  rep{ctx, zmq::socket_type::rep};
 
-    LocalRing data{kRingSlots, kSlotBytes};
-    LocalRing ack {64,          kSlotBytes};
+    /* Data ring slots are sized at start() from the configured frame size: the
+     * shipper turns one slot into one PUB message, so a frame must fit a slot.
+     * ZMQ has no continuation mechanism -- see publishLargeFrame(). */
+    std::unique_ptr<LocalRing> data;
+    LocalRing ack {64, kSlotBytes};
 
     /* Cmd buffer drained by audio thread. */
     std::mutex             cmd_mutex;
@@ -140,6 +143,9 @@ bool ZmqTransport::start(const std::string& endpoint_pair) {
     } catch (const zmq::error_t&) {
         return false;
     }
+    /* Size the internal ring so one slot holds one frame -> one PUB message. */
+    impl_->data = std::make_unique<LocalRing>(kRingSlots, (size_t)slot_size_);
+
     running_.store(true, std::memory_order_release);
     shipper_ = std::thread(&ZmqTransport::shipperLoop, this);
     return true;
@@ -149,18 +155,32 @@ void ZmqTransport::stop() {
     if (running_.exchange(false, std::memory_order_acq_rel)) {
         if (shipper_.joinable()) shipper_.join();
     }
+    /* Release the ring so a subsequent start() re-sizes it from configure(). */
+    impl_->data.reset();
+}
+
+void ZmqTransport::configure(uint32_t slot_size) {
+    if (slot_size) slot_size_ = slot_size;
+}
+
+bool ZmqTransport::publishLargeFrame(const oec_frame_header_t&, const void*, size_t) {
+    /* The shipper maps one ring slot to one PUB message, so a frame cannot span
+     * slots the way the shared-memory ring allows. Raise the transport's slot size
+     * (Ring slot size in the editor) instead; the caller reports FRAME_TOO_LARGE. */
+    return false;
 }
 
 uint8_t* ZmqTransport::acquireDataSlot(uint32_t* out_cap, bool dropOldest) {
+    if (!impl_->data) return nullptr;
     bool evicted = false;
-    uint8_t* slot = impl_->data.acquire(out_cap, dropOldest, &evicted);
+    uint8_t* slot = impl_->data->acquire(out_cap, dropOldest, &evicted);
     /* Route through noteDropped() so the LOST_DATA flag is armed too, rather than
      * bumping the counter behind its back. */
     if (evicted) noteDropped();
     return slot;
 }
 void ZmqTransport::publishData(uint32_t bytes_written) {
-    impl_->data.publish(bytes_written);
+    if (impl_->data) impl_->data->publish(bytes_written);
 }
 uint8_t* ZmqTransport::acquireAckSlot(uint32_t* out_cap) {
     /* dropOldest=false: the ack ring returns nullptr when full rather than evicting. */
@@ -192,12 +212,12 @@ void ZmqTransport::shipperLoop() {
         /* Drain data ring -> PUB */
         const uint8_t* slot = nullptr;
         uint32_t sz = 0;
-        while (impl_->data.peek(&slot, &sz)) {
+        while (impl_->data && impl_->data->peek(&slot, &sz)) {
             const auto* h = reinterpret_cast<const oec_frame_header_t*>(slot);
             uint16_t topic = h->stream_id;
             impl_->pub.send(zmq::buffer(&topic, sizeof(topic)), zmq::send_flags::sndmore);
             impl_->pub.send(zmq::buffer(slot, sz), zmq::send_flags::none);
-            impl_->data.consume_one();
+            impl_->data->consume_one();
         }
 
         /* Drain ack ring -> REP reply (if a request is outstanding) */

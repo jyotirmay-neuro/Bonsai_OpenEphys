@@ -29,6 +29,8 @@ public:
 
     uint8_t* acquireDataSlot(uint32_t* out_cap, bool dropOldest) override;
     void publishData(uint32_t bytes_written) override;
+    bool publishLargeFrame(const oec_frame_header_t& header,
+                           const void* payload, size_t payload_len) override;
 
     uint8_t* acquireAckSlot(uint32_t* out_cap) override;
     void publishAck(uint32_t bytes_written) override;

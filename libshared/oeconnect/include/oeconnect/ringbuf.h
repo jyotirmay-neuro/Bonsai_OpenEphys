@@ -102,6 +102,23 @@ OEC_API const void *oec_ringbuf_peek(oec_ringbuf_t *rb, uint32_t *out_slot_size)
 /* Mark the peeked slot consumed (release ordering). */
 OEC_API void oec_ringbuf_consume(oec_ringbuf_t *rb);
 
+/* ---- Multi-slot frames (spec §4.3, BIT_CONTINUATION) ---- *
+ * A frame larger than slot_size occupies several consecutive slots: the first
+ * carries the header, the rest carry raw payload. The consumer must not begin
+ * reassembly until every slot has been published, so it needs to see how many
+ * slots are pending and to look past the oldest one. */
+
+/* Slots published but not yet consumed. */
+OEC_API uint64_t oec_ringbuf_available(const oec_ringbuf_t *rb);
+
+/* Peek the slot `offset` positions after the oldest unconsumed one, without
+ * committing to consume it. NULL if fewer than `offset + 1` slots are available. */
+OEC_API const void *oec_ringbuf_peek_at(oec_ringbuf_t *rb, uint64_t offset,
+                                        uint32_t *out_slot_size);
+
+/* Consume `n` slots at once (release ordering). */
+OEC_API void oec_ringbuf_consume_n(oec_ringbuf_t *rb, uint64_t n);
+
 /* Diagnostics. */
 
 /* Number of slots this producer handle has evicted because the ring was full.

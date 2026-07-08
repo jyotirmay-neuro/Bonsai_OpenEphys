@@ -33,6 +33,19 @@ public:
     /** Publish the slot most recently returned by acquireDataSlot. */
     virtual void publishData(uint32_t bytes_written) = 0;
 
+    /**
+     * Publish a frame too large for one slot, spanning consecutive slots with
+     * BIT_CONTINUATION set on the header (spec §4.3). Kept off the normal path so
+     * frames that do fit stay zero-copy: the caller writes straight into the slot.
+     *
+     * `header` is copied verbatim except for the CONTINUATION flag, which this
+     * function sets. Returns false when the frame exceeds
+     * OEC_MAX_CONTINUATION_SLOTS or the transport cannot span slots at all — the
+     * caller then reports ERROR(FRAME_TOO_LARGE).
+     */
+    virtual bool publishLargeFrame(const oec_frame_header_t& header,
+                                   const void* payload, size_t payload_len) = 0;
+
     /** Same pair for the ACK ring. */
     virtual uint8_t* acquireAckSlot(uint32_t* out_cap) = 0;
     virtual void publishAck(uint32_t bytes_written) = 0;

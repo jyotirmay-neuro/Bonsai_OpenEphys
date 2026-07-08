@@ -54,6 +54,17 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "oec_ringbuf_publish", CallingConvention = CallingConvention.Cdecl)]
     public static extern void RingbufPublish(IntPtr rb);
 
+    /* Multi-slot frames (spec §4.3, BIT_CONTINUATION). */
+
+    [DllImport(Lib, EntryPoint = "oec_ringbuf_available", CallingConvention = CallingConvention.Cdecl)]
+    public static extern ulong RingbufAvailable(IntPtr rb);
+
+    [DllImport(Lib, EntryPoint = "oec_ringbuf_peek_at", CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr RingbufPeekAt(IntPtr rb, ulong offset, out uint outSize);
+
+    [DllImport(Lib, EntryPoint = "oec_ringbuf_consume_n", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void RingbufConsumeN(IntPtr rb, ulong n);
+
     /* --- shm --- */
     [DllImport(Lib, EntryPoint = "oec_shm_open", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     public static extern OecStatus ShmOpen(

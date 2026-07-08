@@ -123,38 +123,115 @@ TEST(HotPath, StreamLabelChoosesStreamIdAndEmitsExactlyOneFrame) {
     oec_shm_unlink(name.c_str());
 }
 
-/* A block too large for one ring slot used to vanish with no diagnostic. */
-TEST(HotPath, OversizedBlockIsCountedAsDropped) {
+/* Spec §4.3: a frame too large for one slot spans consecutive slots with
+ * BIT_CONTINUATION on the header, and reassembles byte-for-byte. */
+TEST(HotPath, OversizedBlockSpansSlotsWithContinuationFlag) {
     ShmemTransport t;
-    std::string name = uniq() + ".oversize";
+    std::string name = uniq() + ".continue";
     ASSERT_TRUE(t.start(name));
 
     FileReaderAdapter board("ttl_out_log.csv");
     AckOutbox outbox(64);
 
     ProcessorConfig cfg;
-    /* 1024 ch x 64 samp x 2 B = 128 KiB payload, well over the 64 KiB slot. */
+    /* 1024 ch x 64 samp x 2 B = 128 KiB payload -> 3 x 64 KiB slots. */
     cfg.num_channels = 1024;
     cfg.block_size   = 64;
+    cfg.enable_continuous = true;
+    cfg.enable_spikes = cfg.enable_ttl = false;
+
+    std::vector<int16_t> input((size_t)cfg.num_channels * cfg.block_size);
+    for (size_t i = 0; i < input.size(); ++i) input[i] = (int16_t)(i & 0x7FFF);
+
+    processBlock(input.data(), 0, cfg, t, board, outbox);
+    EXPECT_EQ(t.totalDropped(), 0u) << "a spannable frame must not be dropped";
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+
+    uint32_t slot_sz = 0;
+    const void* first = oec_ringbuf_peek(rb, &slot_sz);
+    ASSERT_NE(first, nullptr);
+    const auto* fh = (const oec_frame_header_t*)first;
+    EXPECT_EQ(fh->stream_id, OEC_STREAM_RAW_BLOCK);
+    EXPECT_TRUE(fh->flags & OEC_FLAG_CONTINUATION) << "multi-slot frame must set CONTINUATION";
+
+    const size_t total = sizeof(oec_frame_header_t) + fh->payload_len;
+    const uint64_t slots = (total + slot_sz - 1) / slot_sz;
+    EXPECT_EQ(slots, 3u);
+    ASSERT_GE(oec_ringbuf_available(rb), slots) << "all slots of a span must be published";
+
+    /* Reassemble exactly as the consumer does, and compare against the source. */
+    std::vector<uint8_t> frame(total);
+    size_t copied = 0;
+    for (uint64_t i = 0; i < slots; ++i) {
+        uint32_t sz = 0;
+        const void* s = oec_ringbuf_peek_at(rb, i, &sz);
+        ASSERT_NE(s, nullptr);
+        const size_t chunk = (total - copied < sz) ? total - copied : sz;
+        std::memcpy(frame.data() + copied, s, chunk);
+        copied += chunk;
+    }
+    ASSERT_EQ(copied, total);
+
+    const auto* sh = (const oec_block_subheader_t*)(frame.data() + sizeof(oec_frame_header_t));
+    EXPECT_EQ(sh->n_channels, 1024);
+    EXPECT_EQ(sh->n_samples, 64);
+    const int16_t* got = (const int16_t*)(frame.data() + sizeof(oec_frame_header_t) + sizeof(*sh));
+    EXPECT_EQ(std::memcmp(got, input.data(), input.size() * sizeof(int16_t)), 0)
+        << "payload must survive the split byte-for-byte";
+
+    oec_ringbuf_consume_n(rb, slots);
+    uint32_t sz = 0;
+    EXPECT_EQ(oec_ringbuf_peek(rb, &sz), nullptr) << "the span is exactly `slots` slots";
+
+    oec_ringbuf_detach(rb);
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
+/* Beyond the 4-slot span the producer gives up: counted as a drop, and reported
+ * with ERROR(FRAME_TOO_LARGE) rather than vanishing. */
+TEST(HotPath, FrameBeyondContinuationSpanIsReportedTooLarge) {
+    ShmemTransport t;
+    std::string name = uniq() + ".toolarge";
+    ASSERT_TRUE(t.start(name));
+
+    FileReaderAdapter board("ttl_out_log.csv");
+    AckOutbox outbox(64);
+
+    ProcessorConfig cfg;
+    /* 1024 ch x 160 samp x 2 B = 320 KiB -> 6 slots at 64 KiB, over the 4-slot cap. */
+    cfg.num_channels = 1024;
+    cfg.block_size   = 160;
     cfg.enable_continuous = true;
     cfg.enable_spikes = cfg.enable_ttl = false;
 
     std::vector<int16_t> input((size_t)cfg.num_channels * cfg.block_size, 0);
     ASSERT_EQ(t.totalDropped(), 0u);
     processBlock(input.data(), 0, cfg, t, board, outbox);
+    EXPECT_EQ(t.totalDropped(), 1u);
 
-    EXPECT_EQ(t.totalDropped(), 1u) << "oversized frame must be counted, not silently dropped";
-
-    /* And nothing was published. */
     oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
     ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
     oec_ringbuf_t* rb = nullptr;
     ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+
+    /* The only published frame is the ERROR explaining why. */
     uint32_t sz = 0;
-    EXPECT_EQ(oec_ringbuf_peek(rb, &sz), nullptr);
+    const void* f = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(f, nullptr);
+    const auto* fh = (const oec_frame_header_t*)f;
+    EXPECT_EQ(fh->stream_id, OEC_STREAM_ERROR);
+    uint16_t code = 0;
+    std::memcpy(&code, (const uint8_t*)f + sizeof(*fh), 2);
+    EXPECT_EQ(code, OEC_ERR_FRAME_TOO_LARGE);
+
     oec_ringbuf_detach(rb);
     oec_shm_close(h);
-
     t.stop();
     oec_shm_unlink(name.c_str());
 }
@@ -227,17 +304,29 @@ TEST(HotPath, LargerSlotSizeAdmitsABlockThatTheDefaultRejects) {
     FileReaderAdapter board("ttl_out_log.csv");
     AckOutbox outbox(64);
 
-    {   /* Default 64 KiB: dropped, nothing published. */
+    {   /* Default 64 KiB: published, but split across slots with CONTINUATION. */
         ShmemTransport t;
         std::string name = uniq() + ".geo64k";
         ASSERT_TRUE(t.start(name));
         processBlock(input.data(), 0, cfg, t, board, outbox);
-        EXPECT_EQ(t.totalDropped(), 1u);
+        EXPECT_EQ(t.totalDropped(), 0u);
+
+        oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+        ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+        oec_ringbuf_t* rb = nullptr;
+        ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+        uint32_t sz = 0;
+        const void* f = oec_ringbuf_peek(rb, &sz);
+        ASSERT_NE(f, nullptr);
+        EXPECT_TRUE(((const oec_frame_header_t*)f)->flags & OEC_FLAG_CONTINUATION);
+        oec_ringbuf_detach(rb);
+        oec_shm_close(h);
+
         t.stop();
         oec_shm_unlink(name.c_str());
     }
 
-    {   /* 256 KiB slots: the same block publishes. */
+    {   /* 256 KiB slots: the same block fits one slot, so no continuation. */
         ShmemTransport t;
         std::string name = uniq() + ".geo256k";
         t.configure(/*slot_size=*/262144u, /*slot_count=*/64u);
@@ -261,6 +350,8 @@ TEST(HotPath, LargerSlotSizeAdmitsABlockThatTheDefaultRejects) {
         const auto* fh = (const oec_frame_header_t*)f;
         EXPECT_EQ(fh->stream_id, OEC_STREAM_RAW_BLOCK);
         EXPECT_EQ(fh->payload_len, 8u + 1024u * 64u * sizeof(int16_t));
+        EXPECT_FALSE(fh->flags & OEC_FLAG_CONTINUATION)
+            << "a frame that fits one slot must not be marked as a span";
         oec_ringbuf_detach(rb);
         oec_shm_close(h);
 

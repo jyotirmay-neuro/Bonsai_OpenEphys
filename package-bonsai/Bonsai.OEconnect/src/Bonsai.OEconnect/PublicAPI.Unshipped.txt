@@ -30,3 +30,7 @@ Bonsai.OEconnect.Data.SyncPoint.Streams.init -> void
 Bonsai.OEconnect.Data.RawBlock.SourceId.get -> byte
 Bonsai.OEconnect.Sessions.Session.Streams.get -> System.ReadOnlyMemory<Bonsai.OEconnect.Data.StreamMeta>
 Bonsai.OEconnect.Data.RawBlock.RawBlock(ulong sampleIndex, ulong hostQpcTicks, ushort streamId, int numChannels, int numSamples, System.ReadOnlyMemory<short> samples, byte sourceId) -> void
+Bonsai.OEconnect.Interop.OecFlags
+const Bonsai.OEconnect.Interop.OecFlags.Continuation = 1 -> ushort
+const Bonsai.OEconnect.Interop.OecFlags.LostData = 2 -> ushort
+const Bonsai.OEconnect.Interop.OecFlags.MaxContinuationSlots = 4 -> ulong

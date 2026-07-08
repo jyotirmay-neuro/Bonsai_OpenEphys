@@ -190,8 +190,18 @@ struct oec_region_header {
   on independent cache lines to avoid false sharing.
 
 Fixed slot size keeps the algorithm trivial. Frames larger than `slot_size`
-set `BIT_CONTINUATION` and span up to 4 contiguous slots; over that ⇒
+set `BIT_CONTINUATION` and span up to 4 consecutive slots; over that ⇒
 `ERROR(FRAME_TOO_LARGE)`.
+
+The first slot of a span holds the header followed by as much payload as fits;
+the remaining slots hold raw payload with no header of their own. Slot count is
+derived from the header: `ceil((32 + payload_len) / slot_size)`. Slots are
+published in order, so a consumer MUST check that the whole span is available
+before reassembling — a partially published span must never be parsed. The
+consumer then consumes all its slots at once.
+
+Only the shared-memory transport can span slots. Over ZMQ one slot maps to one
+message, so the frame must fit a single slot; size the ring accordingly.
 
 ### 4.4 Wakeups (optional)
 

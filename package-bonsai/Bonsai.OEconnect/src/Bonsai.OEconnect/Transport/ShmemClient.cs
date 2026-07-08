@@ -63,14 +63,71 @@ internal sealed class ShmemClient : ITransportClient
         _mapped = IntPtr.Zero; _mappedSize = UIntPtr.Zero; _regionHeader = IntPtr.Zero;
     }
 
-    public ReadOnlySpan<byte> PeekData()
+    /* Slots consumed by the last PeekData(); 1 for an ordinary frame, more for a
+     * BIT_CONTINUATION span. Reset by ConsumeData(). */
+    private ulong _pendingSlots = 1;
+    private byte[] _reassembly = Array.Empty<byte>();
+
+    /// <summary>
+    /// Returns one whole frame. A frame larger than a slot spans consecutive slots
+    /// with BIT_CONTINUATION set (spec §4.3); this stitches them into a contiguous
+    /// buffer so the rest of the stack never sees a fragment. Returns empty until
+    /// every slot of the span is published — a partially-written span must never be
+    /// parsed.
+    /// </summary>
+    public unsafe ReadOnlySpan<byte> PeekData()
     {
         if (_dataRing == IntPtr.Zero) return default;
-        var ptr = NativeMethods.RingbufPeek(_dataRing, out uint size);
+        var ptr = NativeMethods.RingbufPeek(_dataRing, out uint slotSize);
         if (ptr == IntPtr.Zero) return default;
-        unsafe { return new ReadOnlySpan<byte>(ptr.ToPointer(), (int)size); }
+
+        _pendingSlots = 1;
+
+        /* The header is always wholly inside the first slot. */
+        if (slotSize < (uint)sizeof(OecFrameHeader))
+            return new ReadOnlySpan<byte>(ptr.ToPointer(), (int)slotSize);
+
+        var h = *(OecFrameHeader*)ptr.ToPointer();
+        if ((h.Flags & OecFlags.Continuation) == 0)
+            return new ReadOnlySpan<byte>(ptr.ToPointer(), (int)slotSize);
+
+        long total = sizeof(OecFrameHeader) + (long)h.PayloadLen;
+        ulong slots = (ulong)((total + slotSize - 1) / slotSize);
+
+        /* A span longer than the producer is allowed to emit means a corrupt header;
+         * drop the slot rather than trust PayloadLen. */
+        if (slots > OecFlags.MaxContinuationSlots)
+        {
+            NativeMethods.RingbufConsume(_dataRing);
+            return default;
+        }
+
+        /* Wait for the tail of the span. The producer publishes slot-by-slot, so a
+         * frame can be visible before it is complete. */
+        if (NativeMethods.RingbufAvailable(_dataRing) < slots) return default;
+
+        if (_reassembly.Length < total) _reassembly = new byte[total];
+        long copied = 0;
+        for (ulong i = 0; i < slots; ++i)
+        {
+            var s = NativeMethods.RingbufPeekAt(_dataRing, i, out uint sz);
+            if (s == IntPtr.Zero) return default;   // raced with an eviction
+            long chunk = Math.Min(total - copied, sz);
+            new ReadOnlySpan<byte>(s.ToPointer(), (int)chunk)
+                .CopyTo(_reassembly.AsSpan((int)copied));
+            copied += chunk;
+        }
+
+        _pendingSlots = slots;
+        return _reassembly.AsSpan(0, (int)total);
     }
-    public void ConsumeData() { if (_dataRing != IntPtr.Zero) NativeMethods.RingbufConsume(_dataRing); }
+
+    public void ConsumeData()
+    {
+        if (_dataRing == IntPtr.Zero) return;
+        NativeMethods.RingbufConsumeN(_dataRing, _pendingSlots);
+        _pendingSlots = 1;
+    }
 
     public ReadOnlySpan<byte> PeekAck()
     {

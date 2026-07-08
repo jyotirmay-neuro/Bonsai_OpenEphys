@@ -41,6 +41,19 @@ public enum OecStatus
     ENotImplemented     = -10
 }
 
+/// <summary>Frame header flags; mirrors OEC_FLAG_* in libshared's frame.h.</summary>
+public static class OecFlags
+{
+    /// <summary>This frame's payload continues into the following ring slots (§4.3).</summary>
+    public const ushort Continuation = 0x0001;
+
+    /// <summary>Data was lost before this frame (§4.3).</summary>
+    public const ushort LostData = 0x0002;
+
+    /// <summary>Maximum slots a continuation span may occupy.</summary>
+    public const ulong MaxContinuationSlots = 4;
+}
+
 /// <summary>Mirrors OEC_PROTOCOL_VERSION_* in libshared's version.h.</summary>
 public static class OecProtocol
 {

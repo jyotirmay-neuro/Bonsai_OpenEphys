@@ -111,6 +111,49 @@ void ShmemTransport::publishData(uint32_t) {
     if (region_header_) region_header_->producer_heartbeat_ns = realtime_ns();
 }
 
+bool ShmemTransport::publishLargeFrame(const oec_frame_header_t& header,
+                                       const void* payload, size_t payload_len)
+{
+    if (!data_ring_ || !region_header_) return false;
+
+    const uint32_t slot = region_header_->slot_size;
+    const size_t total = sizeof(oec_frame_header_t) + payload_len;
+    const uint64_t slots = (total + slot - 1) / slot;
+
+    /* Spec §4.3 caps a span at 4 slots. Also refuse a span the ring cannot even
+     * hold: the producer would evict its own earlier slots mid-frame. */
+    if (slots > OEC_MAX_CONTINUATION_SLOTS || slots > region_header_->slot_count)
+        return false;
+
+    /* Slot 0: header (with CONTINUATION) + as much payload as fits.
+     * Slots 1..n-1: raw payload. Published in order, so the consumer -- which sees
+     * how many slots are pending -- never starts reassembling a partial frame. */
+    oec_frame_header_t h = header;
+    h.flags = (uint16_t)(h.flags | OEC_FLAG_CONTINUATION);
+
+    const uint8_t* src = static_cast<const uint8_t*>(payload);
+    size_t remaining = payload_len;
+
+    for (uint64_t i = 0; i < slots; ++i) {
+        uint32_t cap = 0;
+        uint8_t* dst = acquireDataSlot(&cap, /*dropOldest=*/true);
+        if (!dst) return false;
+
+        size_t off = 0;
+        if (i == 0) {
+            std::memcpy(dst, &h, sizeof(h));
+            off = sizeof(h);
+        }
+        const size_t chunk = (remaining < (size_t)cap - off) ? remaining : (size_t)cap - off;
+        if (chunk) std::memcpy(dst + off, src, chunk);
+        src += chunk;
+        remaining -= chunk;
+
+        publishData((uint32_t)(off + chunk));
+    }
+    return true;
+}
+
 uint8_t* ShmemTransport::acquireAckSlot(uint32_t* out_cap) {
     if (!ack_ring_) return nullptr;
     return (uint8_t*)oec_ringbuf_acquire(ack_ring_, /*dropOldest=*/0, out_cap);

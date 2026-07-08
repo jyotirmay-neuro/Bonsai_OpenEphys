@@ -4,6 +4,7 @@
 #include "Util/PulseScheduler.h"
 
 #include <cstring>
+#include <vector>
 
 #if defined(_WIN32)
 #  define WIN32_LEAN_AND_MEAN
@@ -45,11 +46,35 @@ void writeContinuousBlock(ITransport& t, const ProcessorConfig& cfg,
     uint8_t* slot = t.acquireDataSlot(&cap, /*dropOldest=*/true);
     if (!slot) return;
     const size_t need = sizeof(oec_frame_header_t) + payload;
+
     if (cap < need) {
-        /* The block does not fit one ring slot (n_channels x n_samples x 2 B + 40 B
-         * > slot_size). Returning silently here made the whole stream vanish with
-         * no diagnostic, so count it and raise slot_size (spec §4.7). */
-        t.noteDropped();
+        /* Too big for one slot. Spec §4.3: span up to 4 consecutive slots with
+         * BIT_CONTINUATION, and only then give up with ERROR(FRAME_TOO_LARGE).
+         * That path cannot write in place, so build the subheader on the stack. */
+        oec_frame_header_t h;
+        oec_frame_init(&h, cfg.continuous_stream_id, payload, sample_index, qpc_now(),
+                       t.consumePendingFlags());
+
+        oec_block_subheader_t sh;
+        sh.n_channels = n_channels;
+        sh.n_samples  = n_samples;
+        sh.dtype      = OEC_DTYPE_INT16;
+        sh.source_id  = source_id;
+        sh.reserved   = 0;
+
+        /* The payload is subheader + samples, so stage it contiguously. Sized once
+         * per geometry change; the fast path above never touches it. */
+        static thread_local std::vector<uint8_t> staging;
+        if (staging.size() < payload) staging.resize(payload);
+        std::memcpy(staging.data(), &sh, sizeof(sh));
+        std::memcpy(staging.data() + sizeof(sh), input, samples_bytes);
+
+        if (!t.publishLargeFrame(h, staging.data(), payload)) {
+            t.noteDropped();
+            writeErrorFrame(t, OEC_ERR_FRAME_TOO_LARGE,
+                            "continuous block exceeds the maximum continuation span; "
+                            "raise the ring slot size");
+        }
         return;
     }
 

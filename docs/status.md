@@ -27,10 +27,10 @@ Last verified: 2026-07-08.
 | Frame bounds validation | Working | Untrusted frames are length-checked before any copy. |
 | `BIT_LOST_DATA` flag (§4.3) | Working | Armed by any drop (ring-full eviction or oversized frame) and stamped on the next published frame, exactly once. Bonsai's `SessionStatus.DropCount` counts gaps; the OE editor shows total frames lost. Ring-full evictions were previously uncounted entirely — `oec_ringbuf_acquire(drop_oldest=1)` returns a slot rather than NULL, so the new `oec_ringbuf_evictions()` counter is what makes them observable. |
 | Frame magic/version check on receive (§2.6, §8.4) | Working | Both sides call `oec_frame_validate()` before touching any field. The plugin refuses a command whose major differs and answers with `ERROR(PROTOCOL_VERSION_MISMATCH)`; the consumer drops the frame, counts it in `InvalidFrameCount`, and raises a fatal `OnError` on a major mismatch. |
-| `BIT_CONTINUATION` multi-slot frames (§4.3) | **Missing** | Frames larger than one slot should span up to 4 slots, else `ERROR(FRAME_TOO_LARGE)`. Instead they are dropped and counted. |
+| `BIT_CONTINUATION` multi-slot frames (§4.3) | Working | A frame over `slot_size` spans up to 4 consecutive slots: header + payload in the first, raw payload after. Beyond that the producer drops it and emits `ERROR(FRAME_TOO_LARGE)`. The consumer waits for the whole span (`oec_ringbuf_available`) before reassembling, so a partially published frame is never parsed. Frames that fit stay zero-copy — the split path is only taken when needed. **ZMQ cannot span**: one ring slot is one PUB message, so its ring is sized to the configured frame size instead. |
 | `ERROR` frame handling | Working | Producer emits `{code_u16, utf8_len_u16, utf8_msg[]}` per §3.1 (the previous hand-rolled emission omitted the length field). Consumer parses it into `SessionStatus.LastErrorCode` / `.LastErrorMessage`. Codes are now enumerated in spec §3.1. |
 | `SYNC` `stream_meta[]` triples (§3.1) | Working | SYNC carries the clock head plus one packed 11-byte `{source_id, n_channels, sample_rate}` per stream. Count derives from `payload_len`, so a producer advertising none stays readable. Surfaced as `SyncPoint.Streams` and cached on `Session.Streams`. |
-| CRC-16 (§2.1, optional) | **Missing** | `oec_crc16()` exists and is unit-tested but is never computed or verified on the hot path. `crc16` is always 0, which the spec permits. |
+| CRC-16 (§2.1, optional) | Not implemented | `oec_crc16()` exists and is unit-tested but is never computed or verified on the hot path. `crc16` is always 0, which the spec explicitly permits. |
 | `FILTERED_BLOCK` publish | Working | The node publishes its input **once**, under the stream id chosen by the *Stream label* parameter (`Raw` or `Filtered`). It does not filter — the label must describe where you placed the node. For both streams, branch the chain and run two OEconnect nodes. |
 | `SPIKE` publish | Working | Republished from OE's event bus via `checkForEvents(true)` + `handleSpike()`. Requires an upstream Spike Detector/sorter — OEconnect does not detect spikes. Waveforms scaled to int16 ADC counts by each spike channel's `bitVolts`. |
 | `TTL_EVENT` publish | Working | Republished from OE's event bus via `checkForEvents()` + `handleTTLEvent()`. Covers board digital inputs and upstream event generators. |
@@ -86,6 +86,7 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
    See [oe-version-compatibility.md](oe-version-compatibility.md).
 3. **`wakeup_batch_K` (§4.4/§4.7) is not implemented.** The consumer uses adaptive
    spin rather than named events; the spec marks wakeups optional.
+4. **CRC-16 (§2.1) is never computed.** `crc16` is always 0, which the spec permits.
 
 ### Resolved
 
@@ -107,9 +108,9 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 
 | Suite | Count | Covers |
 |---|---|---|
-| `libshared` (C) | 35 | Ring buffer SPSC + eviction accounting, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
-| Plugin (C++) | 27 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming, command frame validation, slow-command BUSY gating (incl. slot held until the dispatcher returns) |
-| Bonsai (C#) | 36 | Interop, HELLO negotiation matrix, command builder, CURVE client policy, frame validation, ERROR frame parsing, drift residual/reset semantics, non-default ring geometry, SYNC stream_meta parsing, block source_id, end-to-end shared-memory round trip |
+| `libshared` (C) | 36 | Ring buffer SPSC + eviction accounting, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
+| Plugin (C++) | 28 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming, command frame validation, slow-command BUSY gating (incl. slot held until the dispatcher returns) |
+| Bonsai (C#) | 37 | Interop, HELLO negotiation matrix, command builder, CURVE client policy, frame validation, ERROR frame parsing, drift residual/reset semantics, non-default ring geometry, SYNC stream_meta parsing, block source_id, end-to-end shared-memory round trip |
 
 The end-to-end round trip drives a real synthetic producer over shared memory and
 asserts that `RawSamples` delivers blocks, so the data path is covered from the

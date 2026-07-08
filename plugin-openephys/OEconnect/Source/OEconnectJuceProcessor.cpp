@@ -307,7 +307,9 @@ void OEconnectJuceProcessor::selectBoardAdapter() {
 
 void OEconnectJuceProcessor::selectTransport() {
     if (cfg_.transport_mode == "Zmq") {
-        transport_ = std::make_unique<ZmqTransport>();
+        auto zmq = std::make_unique<ZmqTransport>();
+        zmq->configure(cfg_.slot_size);   /* one slot == one PUB message */
+        transport_ = std::move(zmq);
         transport_->start(cfg_.zmq_endpoint);
     } else {   /* "Auto" and "SharedMem" both prefer shmem, fall back to ZMQ. */
         char name[64];
@@ -319,7 +321,9 @@ void OEconnectJuceProcessor::selectTransport() {
         shmem->configure(cfg_.slot_size, cfg_.slot_count);   /* before start() */
         transport_ = std::move(shmem);
         if (!transport_->start(cfg_.shm_name)) {
-            transport_ = std::make_unique<ZmqTransport>();
+            auto zmq = std::make_unique<ZmqTransport>();
+            zmq->configure(cfg_.slot_size);
+            transport_ = std::move(zmq);
             transport_->start(cfg_.zmq_endpoint);
         }
     }

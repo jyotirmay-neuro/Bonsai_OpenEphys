@@ -31,6 +31,11 @@ OEC_STATIC_ASSERT(sizeof(oec_frame_header_t) == 32,
 #define OEC_FLAG_CONTINUATION 0x0001u
 #define OEC_FLAG_LOST_DATA    0x0002u
 
+/* A frame too large for one slot spans up to this many consecutive slots, the
+ * first carrying the header and the rest raw payload (spec §4.3). Beyond that the
+ * producer reports ERROR(FRAME_TOO_LARGE) instead. */
+#define OEC_MAX_CONTINUATION_SLOTS 4u
+
 /* Stream IDs */
 #define OEC_STREAM_RAW_BLOCK       0x0001u
 #define OEC_STREAM_FILTERED_BLOCK  0x0002u

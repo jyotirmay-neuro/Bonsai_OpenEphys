@@ -235,6 +235,33 @@ void oec_ringbuf_consume(oec_ringbuf_t *rb)
     atomic_store_explicit(cons_idx(rb), rb->cached_cons + 1, memory_order_release);
 }
 
+uint64_t oec_ringbuf_available(const oec_ringbuf_t *rb) {
+    if (!rb) return 0;
+    oec_ringbuf_t *m = (oec_ringbuf_t *)rb;
+    uint64_t c = atomic_load_explicit(cons_idx(m), memory_order_relaxed);
+    uint64_t p = atomic_load_explicit(prod_idx(m), memory_order_acquire);
+    return p - c;
+}
+
+const void *oec_ringbuf_peek_at(oec_ringbuf_t *rb, uint64_t offset, uint32_t *out_slot_size)
+{
+    if (!rb) return NULL;
+    uint64_t c = atomic_load_explicit(cons_idx(rb), memory_order_relaxed);
+    uint64_t p = atomic_load_explicit(prod_idx(rb), memory_order_acquire);
+    if (p - c <= offset) return NULL;   /* that slot is not published yet */
+    uint8_t *slot = rb->base + rb->lo.ring_off
+                  + (size_t)((c + offset) % rb->lo.slot_count) * rb->lo.slot_size;
+    if (out_slot_size) *out_slot_size = rb->lo.slot_size;
+    return slot;
+}
+
+void oec_ringbuf_consume_n(oec_ringbuf_t *rb, uint64_t n)
+{
+    if (!rb || n == 0) return;
+    uint64_t c = atomic_load_explicit(cons_idx(rb), memory_order_relaxed);
+    atomic_store_explicit(cons_idx(rb), c + n, memory_order_release);
+}
+
 uint64_t oec_ringbuf_evictions(const oec_ringbuf_t *rb) {
     return rb ? rb->evictions : 0;
 }

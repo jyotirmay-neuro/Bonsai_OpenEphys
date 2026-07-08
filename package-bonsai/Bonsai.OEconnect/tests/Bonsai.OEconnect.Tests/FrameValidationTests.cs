@@ -56,6 +56,23 @@ public class FrameValidationTests
             NativeMethods.RingbufPublish(_dataRing);
         }
 
+        /// <summary>Publishes one frame split across `slots` consecutive ring slots.</summary>
+        public unsafe void EmitSpan(byte[] frame, uint slotSize, ulong slots)
+        {
+            long copied = 0;
+            for (ulong i = 0; i < slots; ++i)
+            {
+                var slot = NativeMethods.RingbufAcquire(_dataRing, 0, out _);
+                Assert.NotEqual(IntPtr.Zero, slot);
+                long chunk = Math.Min(frame.Length - copied, slotSize);
+                frame.AsSpan((int)copied, (int)chunk)
+                     .CopyTo(new Span<byte>(slot.ToPointer(), (int)chunk));
+                copied += chunk;
+                NativeMethods.RingbufPublish(_dataRing);
+            }
+            Assert.Equal(frame.Length, copied);
+        }
+
         public void Dispose()
         {
             if (_dataRing != IntPtr.Zero) NativeMethods.RingbufDetach(_dataRing);
@@ -297,6 +314,68 @@ public class FrameValidationTests
 
         Assert.NotNull(got);
         Assert.Equal(3, got!.Value.SourceId);
+    }
+
+    /// <summary>
+    /// Spec §4.3: a frame larger than one slot spans consecutive slots with
+    /// BIT_CONTINUATION. The consumer must stitch them back into one frame, and must
+    /// not parse a span until every slot has been published.
+    /// </summary>
+    [Fact]
+    public unsafe void ContinuationSpanIsReassembledIntoOneFrame()
+    {
+        const uint slotSize = 65536u, slotCount = 64u;
+        const int channels = 1024, samples = 64;   // 128 KiB payload -> 3 slots
+
+        var name = MakeShmName("continue");
+        using var prod = new RawProducer(name, slotSize, slotCount);
+
+        int payload = sizeof(OecBlockSubheader) + channels * samples * sizeof(short);
+        long total = sizeof(OecFrameHeader) + payload;
+        ulong slots = (ulong)((total + slotSize - 1) / slotSize);
+        Assert.Equal(3ul, slots);
+
+        /* Build the whole frame, then hand it out slot by slot, exactly as
+         * ShmemTransport::publishLargeFrame does. */
+        var frame = new byte[total];
+        fixed (byte* f = frame)
+        {
+            var hdr = new OecFrameHeader();
+            NativeMethods.FrameInit(ref hdr, OecStreams.RawBlock, (uint)payload, 7, 0,
+                                    OecFlags.Continuation);
+            *(OecFrameHeader*)f = hdr;
+
+            var sh = (OecBlockSubheader*)(f + sizeof(OecFrameHeader));
+            sh->NumChannels = channels;
+            sh->NumSamples = samples;
+            sh->SourceId = 1;
+
+            var samplesPtr = (short*)(f + sizeof(OecFrameHeader) + sizeof(OecBlockSubheader));
+            for (int i = 0; i < channels * samples; ++i) samplesPtr[i] = (short)(i & 0x7FFF);
+        }
+
+        prod.EmitSpan(frame, slotSize, slots);
+
+        using var session = AttachConsumer(name);
+        RawBlock? got = null;
+        using var sub = session.RawSubject.Subscribe(b => got ??= b.Clone(), _ => { });
+        session.StartReader();
+
+        SpinUntil(() => got != null, TimeSpan.FromSeconds(3));
+
+        Assert.NotNull(got);
+        Assert.Equal(channels, got!.Value.NumChannels);
+        Assert.Equal(samples, got.Value.NumSamples);
+        Assert.Equal(1, got.Value.SourceId);
+        Assert.Equal(7ul, got.Value.SampleIndex);
+
+        var s = got.Value.Samples.Span;
+        Assert.Equal(channels * samples, s.Length);
+        for (int i = 0; i < s.Length; ++i)
+            Assert.Equal((short)(i & 0x7FFF), s[i]);
+
+        /* Exactly one frame: the span consumed all three slots, leaving nothing. */
+        Assert.Equal(1, Interlocked.Read(ref session.FrameCount));
     }
 
     [Fact]

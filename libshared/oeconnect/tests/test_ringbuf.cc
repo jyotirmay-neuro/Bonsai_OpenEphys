@@ -112,6 +112,43 @@ TEST(Ringbuf, DropOldestAdvancesConsumer) {
     oec_ringbuf_detach(rb);
 }
 
+/* Multi-slot frames (spec §4.3) need the consumer to see how many slots are
+ * pending, look past the oldest, and consume the whole span at once. */
+TEST(Ringbuf, PeekAtAvailableAndConsumeNSupportMultiSlotFrames) {
+    auto r = make_region(/*slot_size*/256, /*slot_count*/4);
+    oec_ringbuf_t *rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(r.ptr(), OEC_RING_DATA, &rb), OEC_OK);
+
+    uint32_t sz = 0;
+    EXPECT_EQ(oec_ringbuf_available(rb), 0u);
+    EXPECT_EQ(oec_ringbuf_peek_at(rb, 0, &sz), nullptr);
+
+    /* Publish three slots tagged 10, 11, 12. */
+    for (int i = 0; i < 3; ++i) {
+        auto* slot = (uint8_t*)oec_ringbuf_acquire(rb, 0, &sz);
+        ASSERT_NE(slot, nullptr);
+        slot[0] = (uint8_t)(10 + i);
+        oec_ringbuf_publish(rb);
+    }
+    EXPECT_EQ(oec_ringbuf_available(rb), 3u);
+
+    /* peek_at looks past the oldest without consuming it. */
+    for (uint64_t i = 0; i < 3; ++i) {
+        const auto* s = (const uint8_t*)oec_ringbuf_peek_at(rb, i, &sz);
+        ASSERT_NE(s, nullptr) << "offset " << i;
+        EXPECT_EQ(s[0], 10 + i);
+    }
+    /* One past the end is not readable: a partially published span must not parse. */
+    EXPECT_EQ(oec_ringbuf_peek_at(rb, 3, &sz), nullptr);
+    EXPECT_EQ(oec_ringbuf_available(rb), 3u) << "peek_at must not consume";
+
+    oec_ringbuf_consume_n(rb, 3);
+    EXPECT_EQ(oec_ringbuf_available(rb), 0u);
+    EXPECT_EQ(oec_ringbuf_peek(rb, &sz), nullptr);
+
+    oec_ringbuf_detach(rb);
+}
+
 /* acquire(drop_oldest=1) always hands back a slot, so a producer can only learn
  * that it overwrote unread data by reading the eviction counter. */
 TEST(Ringbuf, EvictionsCountedOnlyWhenRingWasFull) {

@@ -106,7 +106,7 @@ Shared-memory ring geometry (spec §4.7). Ignored when Transport is `Zmq`.
 
 | Control | Default | Meaning |
 |---|---|---|
-| **Ring slot size** | 64 KiB | Largest frame this node can publish. Raise it for wide probes: a block needs `40 + n_channels × n_samples × 2` bytes, so 64 KiB caps you at 1023 channels at a 32-sample block. |
+| **Ring slot size** | 64 KiB | Frame size that publishes without splitting. A block needs `40 + n_channels × n_samples × 2` bytes; over this it spans up to 4 slots (one extra copy), and beyond ~4× it is dropped with `ERROR(FRAME_TOO_LARGE)`. Over ZMQ there is no splitting — this is a hard cap. |
 | **Ring slot count** | 256 | How many frames the ring holds — how long Bonsai may stall before the oldest unread frame is overwritten. ≈270 ms at a 32-sample block. |
 
 Both are offered as fixed choices rather than free text: `slot_count` must be a
@@ -138,10 +138,11 @@ Dropped frames climb for two different reasons:
 - **Bonsai is not draining fast enough** — the ring filled and the oldest slot was
   evicted. Simplify the downstream workflow, or accept the loss (the plugin never
   blocks acquisition to wait for a consumer).
-- **The block does not fit one ring slot.** A frame needs
-  `40 + n_channels x n_samples x 2` bytes, so the default 64 KiB slot tops out at
-  **1023 channels** at a 32-sample block. Exceed it and *every* frame is dropped —
-  raise **Ring slot size** (below).
+- **The block does not fit even a 4-slot span.** A frame needs
+  `40 + n_channels x n_samples x 2` bytes. Over one slot it is split across up to
+  four consecutive slots automatically; beyond that it is dropped and the plugin
+  emits `ERROR(FRAME_TOO_LARGE)`. Raise **Ring slot size** (below). Splitting costs
+  one extra copy, so sizing a slot to fit the block outright is faster.
 
 Both kinds arm the `BIT_LOST_DATA` header flag on the next frame the plugin
 publishes, so Bonsai's `SessionStatus.DropCount` counts the **gaps**, while the OE
