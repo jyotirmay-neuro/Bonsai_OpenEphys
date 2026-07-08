@@ -112,6 +112,33 @@ TEST(Ringbuf, DropOldestAdvancesConsumer) {
     oec_ringbuf_detach(rb);
 }
 
+/* acquire(drop_oldest=1) always hands back a slot, so a producer can only learn
+ * that it overwrote unread data by reading the eviction counter. */
+TEST(Ringbuf, EvictionsCountedOnlyWhenRingWasFull) {
+    auto r = make_region(/*slot_size*/256, /*slot_count*/4);
+    oec_ringbuf_t *rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(r.ptr(), OEC_RING_DATA, &rb), OEC_OK);
+
+    uint32_t sz = 0;
+    EXPECT_EQ(oec_ringbuf_evictions(rb), 0u);
+
+    /* Fill the ring exactly: no eviction yet. */
+    for (int i = 0; i < 4; ++i) {
+        ASSERT_NE(oec_ringbuf_acquire(rb, /*drop_oldest=*/1, &sz), nullptr);
+        oec_ringbuf_publish(rb);
+    }
+    EXPECT_EQ(oec_ringbuf_evictions(rb), 0u);
+
+    /* Each further acquire discards the oldest unread frame. */
+    for (int i = 1; i <= 3; ++i) {
+        ASSERT_NE(oec_ringbuf_acquire(rb, /*drop_oldest=*/1, &sz), nullptr);
+        oec_ringbuf_publish(rb);
+        EXPECT_EQ(oec_ringbuf_evictions(rb), (uint64_t)i);
+    }
+
+    oec_ringbuf_detach(rb);
+}
+
 TEST(Ringbuf, SPSCAcrossThreadsLossless1M) {
     auto r = make_region(/*slot_size*/64, /*slot_count*/1024);
     oec_ringbuf_t *prod = nullptr;

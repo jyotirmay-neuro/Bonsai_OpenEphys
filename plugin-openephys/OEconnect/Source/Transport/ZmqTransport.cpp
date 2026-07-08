@@ -47,13 +47,15 @@ struct LocalRing {
     {
         for (auto& s : slots) s.resize(slot_bytes);
     }
-    uint8_t* acquire(uint32_t* cap, bool dropOldest, uint64_t* dropped) {
+    /** `*evicted` is set when the oldest unread slot had to be discarded. */
+    uint8_t* acquire(uint32_t* cap, bool dropOldest, bool* evicted) {
+        if (evicted) *evicted = false;
         size_t p = prod.load(std::memory_order_relaxed);
         size_t c = cons.load(std::memory_order_acquire);
         if (p - c >= slots.size()) {
             if (!dropOldest) return nullptr;
             cons.store(c + 1, std::memory_order_release);
-            ++(*dropped);
+            if (evicted) *evicted = true;
             c = c + 1;
         }
         size_t i = p % slots.size();
@@ -150,14 +152,19 @@ void ZmqTransport::stop() {
 }
 
 uint8_t* ZmqTransport::acquireDataSlot(uint32_t* out_cap, bool dropOldest) {
-    return impl_->data.acquire(out_cap, dropOldest, &dropped_);
+    bool evicted = false;
+    uint8_t* slot = impl_->data.acquire(out_cap, dropOldest, &evicted);
+    /* Route through noteDropped() so the LOST_DATA flag is armed too, rather than
+     * bumping the counter behind its back. */
+    if (evicted) noteDropped();
+    return slot;
 }
 void ZmqTransport::publishData(uint32_t bytes_written) {
     impl_->data.publish(bytes_written);
 }
 uint8_t* ZmqTransport::acquireAckSlot(uint32_t* out_cap) {
-    uint64_t ignored = 0;
-    return impl_->ack.acquire(out_cap, /*dropOldest=*/false, &ignored);
+    /* dropOldest=false: the ack ring returns nullptr when full rather than evicting. */
+    return impl_->ack.acquire(out_cap, /*dropOldest=*/false, /*evicted=*/nullptr);
 }
 void ZmqTransport::publishAck(uint32_t bytes_written) {
     impl_->ack.publish(bytes_written);

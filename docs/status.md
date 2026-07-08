@@ -25,7 +25,7 @@ Last verified: 2026-07-08.
 | Drift correction | Working | 60-point least-squares fit; `SampleToHostTime` anchors it to UTC. |
 | Auto-discovery | Working | Sidecar JSON + shared-region heartbeat liveness check. One sidecar per OEconnect node (`<pid>-<node_id>.json`); with several nodes in a chain, give each Bonsai source an explicit `Endpoint`. |
 | Frame bounds validation | Working | Untrusted frames are length-checked before any copy. |
-| `BIT_LOST_DATA` flag (§4.3) | **Missing** | The producer never sets it, so Bonsai's `SessionStatus.DropCount` always reads 0. Drops are visible only on the OE editor's status line. |
+| `BIT_LOST_DATA` flag (§4.3) | Working | Armed by any drop (ring-full eviction or oversized frame) and stamped on the next published frame, exactly once. Bonsai's `SessionStatus.DropCount` counts gaps; the OE editor shows total frames lost. Ring-full evictions were previously uncounted entirely — `oec_ringbuf_acquire(drop_oldest=1)` returns a slot rather than NULL, so the new `oec_ringbuf_evictions()` counter is what makes them observable. |
 | Frame magic/version check on receive (§2.6) | **Missing** | Neither side calls `oec_frame_validate()`. A frame with a plausible `stream_id` is parsed without checking `magic` or `version_major`. Payload bounds *are* checked, so this is a conformance gap rather than a memory-safety one. |
 | `BIT_CONTINUATION` multi-slot frames (§4.3) | **Missing** | Frames larger than one slot should span up to 4 slots, else `ERROR(FRAME_TOO_LARGE)`. Instead they are dropped and counted. |
 | `SYNC` `stream_meta[]` triples (§3.1) | **Missing** | `SYNC` carries `qpc_freq_hz` + `fpga_sample_rate_hz` only; the per-source `{source_id, n_channels, sample_rate}` array is not emitted. |
@@ -107,8 +107,8 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 
 | Suite | Count | Covers |
 |---|---|---|
-| `libshared` (C) | 34 | Ring buffer SPSC + eviction, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
-| Plugin (C++) | 16 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize-drop accounting |
+| `libshared` (C) | 35 | Ring buffer SPSC + eviction accounting, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
+| Plugin (C++) | 18 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming |
 | Bonsai (C#) | 24 | Interop, HELLO negotiation matrix, command builder, CURVE client policy (loopback exemption, fail-closed, key validation), end-to-end shared-memory round trip against a synthetic producer |
 
 The end-to-end round trip drives a real synthetic producer over shared memory and

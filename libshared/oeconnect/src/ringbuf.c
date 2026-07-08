@@ -32,6 +32,9 @@ struct oec_ringbuf {
     /* cached for producer/consumer fast paths */
     uint64_t cached_prod;
     uint64_t cached_cons;
+    /* Producer-local tally of slots evicted because the ring was full. Lives in
+     * the handle, not the shared region: it counts what THIS producer discarded. */
+    uint64_t evictions;
 };
 
 static size_t align_up(size_t v, size_t a) { return (v + a - 1) & ~(a - 1); }
@@ -194,6 +197,7 @@ void *oec_ringbuf_acquire(oec_ringbuf_t *rb, int drop_oldest, uint32_t *out_slot
                     cons_idx(rb), &c, c + 1,
                     memory_order_release, memory_order_acquire)) {
                 c = c + 1;
+                ++rb->evictions;   /* the oldest frame was discarded */
                 break;
             }
             /* c reloaded by CAS on failure; loop re-tests fullness. */
@@ -229,6 +233,10 @@ void oec_ringbuf_consume(oec_ringbuf_t *rb)
 {
     if (!rb) return;
     atomic_store_explicit(cons_idx(rb), rb->cached_cons + 1, memory_order_release);
+}
+
+uint64_t oec_ringbuf_evictions(const oec_ringbuf_t *rb) {
+    return rb ? rb->evictions : 0;
 }
 
 uint64_t oec_ringbuf_producer_index(const oec_ringbuf_t *rb) {

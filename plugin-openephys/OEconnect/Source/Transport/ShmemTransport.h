@@ -27,7 +27,12 @@ public:
     const uint8_t* peekCmd(uint32_t* out_size) override;
     void consumeCmd() override;
 
-    void noteDropped() override { ++dropped_; }
+    void noteDropped() override { ++dropped_; lost_data_pending_ = true; }
+    uint16_t consumePendingFlags() override {
+        if (!lost_data_pending_) return 0;
+        lost_data_pending_ = false;
+        return OEC_FLAG_LOST_DATA;
+    }
     uint64_t totalDropped() const override { return dropped_; }
     std::string name() const override { return "SharedMem"; }
 
@@ -40,6 +45,8 @@ private:
     oec_ringbuf_t* cmd_ring_  = nullptr;
     oec_ringbuf_t* ack_ring_  = nullptr;
     uint64_t       dropped_ = 0;
+    bool           lost_data_pending_ = false;
+    uint64_t       last_evictions_ = 0;   /* to detect ring-full evictions */
     std::string    name_;
 };
 

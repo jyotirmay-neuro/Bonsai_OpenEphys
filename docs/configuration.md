@@ -131,11 +131,11 @@ Dropped frames climb for two different reasons:
   is dropped. Ring geometry is currently compile-time, so the only remedy is fewer
   channels per OEconnect node.
 
-> This dropped-frame count lives in the **OE editor only**. The plugin never sets
-> the `BIT_LOST_DATA` header flag, and Bonsai's `SessionStatus.DropCount` counts
-> nothing else — so a drop is invisible from Bonsai. If Bonsai shows
-> `FrameCount = 0` and `DropCount = 0`, check the OE editor's readout before
-> concluding the plugin is idle. See [status.md](status.md).
+Both kinds arm the `BIT_LOST_DATA` header flag on the next frame the plugin
+publishes, so Bonsai's `SessionStatus.DropCount` counts the **gaps**, while the OE
+editor shows the total **frames** lost. A block that never fits a slot publishes
+nothing at all, so there is no next frame to carry the flag: Bonsai sees silence
+and only the OE editor's readout climbs.
 
 ---
 

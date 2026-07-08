@@ -44,9 +44,17 @@ public:
     virtual const uint8_t* peekCmd(uint32_t* out_size) = 0;
     virtual void consumeCmd() = 0;
 
-    /** Record a frame the producer could not publish (e.g. it exceeds one ring
-     *  slot). Surfaces via totalDropped(); wait-free. */
+    /** Record data the consumer will never see: a frame too large to publish, or a
+     *  slot evicted because the ring was full. Bumps totalDropped() and arms the
+     *  LOST_DATA flag for the next frame. Wait-free. */
     virtual void noteDropped() = 0;
+
+    /**
+     * Header flags to OR into the frame about to be written, consuming any armed
+     * state. Returns OEC_FLAG_LOST_DATA exactly once after a drop, so the consumer
+     * learns of the gap on the next frame it receives (spec §4.3).
+     */
+    virtual uint16_t consumePendingFlags() = 0;
 
     /** Diagnostics. */
     virtual uint64_t totalDropped() const = 0;

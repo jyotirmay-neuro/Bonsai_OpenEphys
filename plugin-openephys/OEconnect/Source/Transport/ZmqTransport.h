@@ -37,7 +37,12 @@ public:
     const uint8_t* peekCmd(uint32_t* out_size) override;
     void consumeCmd() override;
 
-    void noteDropped() override { ++dropped_; }
+    void noteDropped() override { ++dropped_; lost_data_pending_ = true; }
+    uint16_t consumePendingFlags() override {
+        if (!lost_data_pending_) return 0;
+        lost_data_pending_ = false;
+        return OEC_FLAG_LOST_DATA;
+    }
     uint64_t totalDropped() const override { return dropped_; }
     std::string name() const override { return "Zmq"; }
 
@@ -49,6 +54,7 @@ private:
     std::atomic<bool> running_{false};
     std::thread shipper_;
     uint64_t dropped_ = 0;
+    bool     lost_data_pending_ = false;
 };
 
 }  // namespace oec::plugin

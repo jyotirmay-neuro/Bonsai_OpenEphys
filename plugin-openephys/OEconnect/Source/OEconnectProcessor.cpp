@@ -50,7 +50,9 @@ void writeRawBlock(ITransport& t, const ProcessorConfig& cfg,
     }
 
     auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
-    oec_frame_init(h, stream_id, payload, sample_index, qpc_now(), flags);
+    /* Tell the consumer about any gap that opened since the last frame (spec §4.3). */
+    oec_frame_init(h, stream_id, payload, sample_index, qpc_now(),
+                   (uint16_t)(flags | t.consumePendingFlags()));
     auto* sh = reinterpret_cast<oec_block_subheader_t*>(slot + sizeof(*h));
     sh->n_channels = (uint16_t)cfg.num_channels;
     sh->n_samples  = (uint16_t)cfg.block_size;
@@ -208,7 +210,7 @@ void drainAckOutbox(ITransport& t, AckOutbox& outbox)
             if (cap < need) continue;
             auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
             oec_frame_init(h, OEC_STREAM_SYNC, (uint32_t)sizeof(sb),
-                           e.sample_index, e.host_qpc_ticks, 0);
+                           e.sample_index, e.host_qpc_ticks, t.consumePendingFlags());
             std::memcpy(slot + sizeof(*h), &sb, sizeof(sb));
             t.publishData((uint32_t)need);
             continue;
@@ -243,7 +245,7 @@ void writeTtlEventFrame(ITransport& t,
 
     auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
     oec_frame_init(h, OEC_STREAM_TTL_EVENT, (uint32_t)sizeof(body),
-                   sample_index, qpc_now(), 0);
+                   sample_index, qpc_now(), t.consumePendingFlags());
     std::memcpy(slot + sizeof(*h), body, sizeof(body));
     t.publishData((uint32_t)need);
 }
@@ -265,7 +267,7 @@ void writeSpikeFrame(ITransport& t,
 
     auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
     oec_frame_init(h, OEC_STREAM_SPIKE, (uint32_t)payload,
-                   sample_index, qpc_now(), 0);
+                   sample_index, qpc_now(), t.consumePendingFlags());
 
     uint8_t* body = slot + sizeof(*h);
     std::memcpy(body + 0, &electrode, 2);

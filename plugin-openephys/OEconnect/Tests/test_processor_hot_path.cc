@@ -158,6 +158,86 @@ TEST(HotPath, OversizedBlockIsCountedAsDropped) {
     oec_shm_unlink(name.c_str());
 }
 
+/* Spec §4.3: after data is lost, the producer sets BIT_LOST_DATA on the next frame
+ * it publishes, exactly once. Without this the consumer cannot see gaps at all. */
+TEST(HotPath, DropArmsLostDataFlagOnNextFrameExactlyOnce) {
+    ShmemTransport t;
+    std::string name = uniq() + ".lostflag";
+    ASSERT_TRUE(t.start(name));
+
+    FileReaderAdapter board("ttl_out_log.csv");
+    AckOutbox outbox(64);
+
+    ProcessorConfig cfg;
+    cfg.num_channels = 2;
+    cfg.block_size   = 4;
+    cfg.enable_continuous = true;
+    cfg.enable_spikes = cfg.enable_ttl = false;
+    std::vector<int16_t> input(cfg.num_channels * cfg.block_size, 1);
+
+    /* No drop yet: the first frame must be clean. */
+    processBlock(input.data(), 0, cfg, t, board, outbox);
+    ASSERT_EQ(t.totalDropped(), 0u);
+
+    /* Force a drop, then publish two more frames. */
+    t.noteDropped();
+    processBlock(input.data(), 4, cfg, t, board, outbox);
+    processBlock(input.data(), 8, cfg, t, board, outbox);
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+
+    uint32_t sz = 0;
+    const void* f0 = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(f0, nullptr);
+    EXPECT_EQ(((const oec_frame_header_t*)f0)->flags & OEC_FLAG_LOST_DATA, 0u)
+        << "frame published before any drop must be clean";
+    oec_ringbuf_consume(rb);
+
+    const void* f1 = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(f1, nullptr);
+    EXPECT_EQ(((const oec_frame_header_t*)f1)->flags & OEC_FLAG_LOST_DATA, OEC_FLAG_LOST_DATA)
+        << "first frame after a drop must carry LOST_DATA";
+    oec_ringbuf_consume(rb);
+
+    const void* f2 = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(f2, nullptr);
+    EXPECT_EQ(((const oec_frame_header_t*)f2)->flags & OEC_FLAG_LOST_DATA, 0u)
+        << "flag must be consumed, not sticky";
+
+    oec_ringbuf_detach(rb);
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
+/* A ring-full eviction is a real data loss, and used to be invisible: with
+ * dropOldest the ring returns a slot rather than nullptr. */
+TEST(HotPath, RingFullEvictionIsCountedAsDropped) {
+    ShmemTransport t;
+    std::string name = uniq() + ".evict";
+    ASSERT_TRUE(t.start(name));
+
+    uint32_t cap = 0;
+    /* Default geometry is 256 slots: fill it, then overflow by three. */
+    for (int i = 0; i < OEC_DEFAULT_SLOT_COUNT; ++i) {
+        ASSERT_NE(t.acquireDataSlot(&cap, /*dropOldest=*/true), nullptr);
+        t.publishData(64);
+    }
+    EXPECT_EQ(t.totalDropped(), 0u) << "filling the ring exactly is not a drop";
+
+    for (int i = 1; i <= 3; ++i) {
+        ASSERT_NE(t.acquireDataSlot(&cap, /*dropOldest=*/true), nullptr);
+        t.publishData(64);
+        EXPECT_EQ(t.totalDropped(), (uint64_t)i);
+    }
+
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
 TEST(HotPath, SetTtlCommandFiresBoardAdapter) {
     ShmemTransport t;
     std::string name = uniq() + ".cmd";

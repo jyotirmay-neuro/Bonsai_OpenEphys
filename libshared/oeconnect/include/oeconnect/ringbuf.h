@@ -103,6 +103,13 @@ OEC_API const void *oec_ringbuf_peek(oec_ringbuf_t *rb, uint32_t *out_slot_size)
 OEC_API void oec_ringbuf_consume(oec_ringbuf_t *rb);
 
 /* Diagnostics. */
+
+/* Number of slots this producer handle has evicted because the ring was full.
+ * `oec_ringbuf_acquire(drop_oldest=1)` always returns a writable slot, so this is
+ * the only way a producer learns that it overwrote unread data. Producer-local:
+ * counts evictions performed through THIS handle, not a shared total. */
+OEC_API uint64_t oec_ringbuf_evictions(const oec_ringbuf_t *rb);
+
 OEC_API uint64_t oec_ringbuf_producer_index(const oec_ringbuf_t *rb);
 OEC_API uint64_t oec_ringbuf_consumer_index(const oec_ringbuf_t *rb);
 

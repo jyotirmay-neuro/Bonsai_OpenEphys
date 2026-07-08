@@ -84,10 +84,10 @@ Add an `OpenEphysSession` node and watch:
 `FrameCount` stuck at 0 means the plugin is not publishing: confirm OE
 acquisition is running and **Stream continuous** is enabled in the plugin editor.
 
-> `DropCount` only counts frames whose `BIT_LOST_DATA` flag is set, and the plugin
-> never sets it — so drops are currently **invisible from Bonsai**. Read the
-> dropped-frame count off the OE editor's status line instead. In particular, a
-> block over ~1023 channels (at a 32-sample block) exceeds one 64 KiB ring slot and
-> every frame is dropped, while Bonsai just sees silence.
+> `DropCount` counts frames carrying `BIT_LOST_DATA`, i.e. the number of **gaps**,
+> not the number of frames lost — the OE editor's status line has that total. One
+> case stays invisible from Bonsai: a block over ~1023 channels (at a 32-sample
+> block) exceeds one 64 KiB ring slot, so nothing is ever published and there is no
+> frame to carry the flag. Check the OE editor if Bonsai sees pure silence.
 
 See `examples/` for ready-to-run workflows.

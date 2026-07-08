@@ -85,7 +85,14 @@ void ShmemTransport::stop() {
 uint8_t* ShmemTransport::acquireDataSlot(uint32_t* out_cap, bool dropOldest) {
     if (!data_ring_) return nullptr;
     void* slot = oec_ringbuf_acquire(data_ring_, dropOldest ? 1 : 0, out_cap);
-    if (!slot && dropOldest) ++dropped_;
+
+    /* With dropOldest the ring never refuses a slot -- it evicts the oldest unread
+     * frame and hands one back. That eviction is the drop, and it is only visible
+     * through the ring's own counter, so poll it here rather than testing `slot`. */
+    const uint64_t evictions = oec_ringbuf_evictions(data_ring_);
+    for (uint64_t i = last_evictions_; i < evictions; ++i) noteDropped();
+    last_evictions_ = evictions;
+
     return (uint8_t*)slot;
 }
 void ShmemTransport::publishData(uint32_t) {
