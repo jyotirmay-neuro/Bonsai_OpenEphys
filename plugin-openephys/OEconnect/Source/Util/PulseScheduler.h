@@ -25,8 +25,13 @@ public:
              uint32_t width_us, uint64_t now_sample, double sample_rate_hz,
              const std::function<void(uint8_t, uint8_t, uint64_t)>& on_edge)
     {
-        uint64_t s = board.setTtl(line, high);
+        /* Rising edge at the top of this block. The event-bus edge is always
+         * emitted; a board that supports direct triggering additionally fires
+         * the pulse itself and needs no scheduled falling edge from us. */
+        uint64_t s = board.setTtl(line, high, /*sample_in_block=*/0);
         if (on_edge) on_edge(line, high ? 1 : 0, s);
+
+        if (board.triggerPulse(line, width_us)) return;
 
         uint64_t width_samples =
             (sample_rate_hz > 0.0)
@@ -36,13 +41,22 @@ public:
         pending_.push_back(Pending{ line, !high, now_sample + width_samples });
     }
 
-    /** Clear any pulse whose deadline `<= block_end_sample`. */
-    void serviceDue(uint64_t block_end_sample, IBoardAdapter& board,
+    /** Clear any pulse whose deadline falls within this block. `block_start_sample`
+     *  lets the falling edge be timestamped at its exact offset inside the block
+     *  rather than rounded to a block boundary. */
+    void serviceDue(uint64_t block_start_sample, int block_size, IBoardAdapter& board,
                     const std::function<void(uint8_t, uint8_t, uint64_t)>& on_edge)
     {
+        const uint64_t block_end_sample = block_start_sample + (uint64_t)block_size;
         for (size_t i = 0; i < pending_.size();) {
             if (pending_[i].clear_at_sample <= block_end_sample) {
-                uint64_t s = board.setTtl(pending_[i].line, pending_[i].clear_high);
+                int offset = 0;
+                if (pending_[i].clear_at_sample > block_start_sample) {
+                    offset = (int)(pending_[i].clear_at_sample - block_start_sample);
+                    if (offset >= block_size) offset = block_size - 1;
+                    if (offset < 0) offset = 0;
+                }
+                uint64_t s = board.setTtl(pending_[i].line, pending_[i].clear_high, offset);
                 if (on_edge) on_edge(pending_[i].line,
                                      pending_[i].clear_high ? 1 : 0, s);
                 pending_[i] = pending_.back();

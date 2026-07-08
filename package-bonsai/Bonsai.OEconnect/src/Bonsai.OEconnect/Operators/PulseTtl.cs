@@ -12,9 +12,11 @@ namespace Bonsai.OEconnect.Operators;
     "WidthMicroseconds. Sent as a single PULSE_TTL command; the plugin asserts " +
     "the edge on its next acquisition callback and schedules the falling edge by " +
     "FPGA sample index, so pulse width is sample-accurate rather than " +
-    "wall-clock-accurate. Width is rounded up to at least one sample. " +
-    "WARNING: the board adapters are still stubs, so no physical line moves yet - " +
-    "the command round-trips but has no hardware effect.")]
+    "wall-clock-accurate. Width is rounded up to at least one sample. Both edges go " +
+    "on OpenEphys' event bus and are captured by any Record Node. To drive a " +
+    "PHYSICAL line, place an output plugin (Acq Board Output, Arduino Output, Pulse " +
+    "Pal) downstream of OEconnect - or enable \"Direct board trigger\" in the plugin " +
+    "editor to have the acquisition board fire the pulse itself.")]
 [WorkflowElementCategory(ElementCategory.Sink)]
 public class PulseTtl
 {

@@ -14,9 +14,6 @@ add_executable(oec_plugin_tests
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Transport/ShmemTransport.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Transport/ZmqTransport.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/FileReaderAdapter.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/RhdAcqBoardAdapter.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/OnixAdapter.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Boards/NeuropixelsAdapter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Sync/DriftEmitter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/OEconnectProcessor.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../Source/Util/SlowCmdWorker.cpp

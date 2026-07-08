@@ -7,6 +7,11 @@
 
 namespace oec::plugin {
 
+/**
+ * Test / CI double. Logs every requested edge to CSV instead of touching
+ * hardware or OE's event bus, so the hot path can be exercised without a JUCE
+ * host. Not used by the shipped plugin -- see EventBusTtlAdapter.
+ */
 class FileReaderAdapter final : public IBoardAdapter {
 public:
     explicit FileReaderAdapter(std::string log_path);
@@ -16,7 +21,7 @@ public:
     int numTtlOutLines() const override { return 8; }
     const char* sdkVersionString() const override { return "FileReader"; }
     bool meetsMinimumSdk() const override { return true; }  // no SDK to gate on
-    uint64_t setTtl(uint8_t line, bool high) override;
+    uint64_t setTtl(uint8_t line, bool high, int sample_in_block) override;
 
     void onStartAcquisition(int blockSize, double sampleRate) override;
     void onStopAcquisition() override;

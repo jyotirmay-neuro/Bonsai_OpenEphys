@@ -116,7 +116,11 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cf
                 if (body_len < 8) { emitAck(t, cookie, OEC_ACK_BAD_ARG, 0); break; }
                 uint8_t line = body[6];
                 uint8_t edge = body[7];
-                uint64_t s = board.setTtl(line, edge != 0);
+                /* Commands are drained at the top of the block, so the edge is
+                 * timestamped at sample offset 0. A latch has no duration, so
+                 * there is no direct-trigger path for it -- the event bus (plus a
+                 * downstream output plugin) is the only way it reaches hardware. */
+                uint64_t s = board.setTtl(line, edge != 0, /*sample_in_block=*/0);
                 if (cfg.on_ttl_emit) cfg.on_ttl_emit(line, edge, s);
                 emitAck(t, cookie, OEC_ACK_OK, s);
                 break;
@@ -135,7 +139,7 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cf
                     s = block_sample;
                 } else {
                     /* No scheduler (e.g. unit test): assert only. */
-                    s = board.setTtl(line, edge != 0);
+                    s = board.setTtl(line, edge != 0, /*sample_in_block=*/0);
                     if (cfg.on_ttl_emit) cfg.on_ttl_emit(line, edge, s);
                 }
                 emitAck(t, cookie, OEC_ACK_OK, s);
@@ -229,8 +233,7 @@ void processBlock(
 {
     /* Clear any TTL pulses whose width has elapsed by the end of this block. */
     if (pulses) {
-        const uint64_t block_end = sample_index + (uint64_t)cfg.block_size;
-        pulses->serviceDue(block_end, board, cfg.on_ttl_emit);
+        pulses->serviceDue(sample_index, cfg.block_size, board, cfg.on_ttl_emit);
     }
 
     drainCmdRing(transport, board, cfg, sample_index, pulses);

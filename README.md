@@ -10,9 +10,10 @@ Bidirectional, low-latency bridge between the Open Ephys GUI and Bonsai-rx.
   network-reachable bind requires CURVE authentication or refuses to start.
 
 > **Read [`docs/status.md`](docs/status.md) before relying on any capability.**
-> Continuous data streaming, recording control, and clock sync work end to end.
-> TTL output currently does **not** reach hardware — the board adapters are
-> stubs — and spike/TTL event streams are not yet emitted by the plugin.
+> Continuous data streaming, recording control, clock sync and TTL output all work
+> end to end. TTL reaches hardware via OE's event bus plus a downstream output
+> plugin (board-agnostic). Spike and TTL-event *input* streams are not yet emitted
+> by the plugin. Only GUI 1.0.x (plugin API v10) is currently built.
 
 ## Quick start
 

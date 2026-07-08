@@ -7,13 +7,14 @@ installed (see [`docs/install.md`](../docs/install.md)).
 |---|---|---|
 | `lfp_band_visualization.bonsai` | `RawSamples → ToMat`, visualize and write to disk | **Yes** |
 | `multi_subscriber_data_split.bonsai` | Several operators sharing one auto-discovered session | **Yes** |
-| `record_with_ttl_marker.bonsai` | Start OE recording from Bonsai; emit TTL markers every 5 s | Recording works; **the TTL markers do not reach hardware** |
-| `closed_loop_spike_triggered_stim.bonsai` | Threshold a unit, pulse TTL line 2 | **No** — depends on `Spikes` (not emitted) and TTL output (stubbed) |
+| `record_with_ttl_marker.bonsai` | Start OE recording from Bonsai; emit TTL markers every 5 s | **Yes** — markers land on OE's event bus; add an output plugin for a physical line |
+| `closed_loop_spike_triggered_stim.bonsai` | Threshold a unit, pulse TTL line 2 | **Partly** — TTL output works now; still depends on `Spikes`, which the plugin does not emit. Detect spikes from `RawSamples` in Bonsai instead. |
 
-> The TTL and spike caveats are tracked in [`docs/status.md`](../docs/status.md).
-> The board adapters no-op, so `SetTtl` / `PulseTtl` acknowledge but move no
-> physical line, and the plugin emits no `SPIKE` frames. Workflows depending on
-> those load and run without error — they simply never fire.
+> Remaining caveats are tracked in [`docs/status.md`](../docs/status.md). TTL
+> output now works, but reaching a *physical* line needs an output plugin (Acq
+> Board Output / Arduino Output / Pulse Pal) downstream of OEconnect. The plugin
+> still emits no `SPIKE` frames, so workflows using the `Spikes` node load and run
+> without error — they simply never fire.
 
 ## Starting point
 

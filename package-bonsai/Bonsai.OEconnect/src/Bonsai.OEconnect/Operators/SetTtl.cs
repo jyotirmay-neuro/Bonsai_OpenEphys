@@ -13,8 +13,10 @@ namespace Bonsai.OEconnect.Operators;
     "stays in that state until you change it - use PulseTtl for a timed pulse. " +
     "Fire-and-forget: the command is queued and applied at the plugin's next " +
     "acquisition callback (~1 ms at 30 kHz), and this node does not wait for the " +
-    "acknowledgement. WARNING: the board adapters are still stubs, so no physical " +
-    "line moves yet - the command round-trips but has no hardware effect.")]
+    "acknowledgement. The plugin publishes the edge on OpenEphys' event bus, so it " +
+    "is captured by any Record Node. To drive a PHYSICAL line, place an output " +
+    "plugin (Acq Board Output, Arduino Output, Pulse Pal) downstream of OEconnect " +
+    "in the OE signal chain and point it at this line.")]
 [WorkflowElementCategory(ElementCategory.Sink)]
 public class SetTtl
 {

@@ -9,6 +9,7 @@
  */
 
 #include "OEconnectProcessor.h"
+#include "Boards/EventBusTtlAdapter.h"
 #include "Util/SlowCmdWorker.h"
 #include "Util/PulseScheduler.h"
 #include <ProcessorHeaders.h>            /* from external/plugin-GUI */
@@ -17,7 +18,8 @@ namespace oec::plugin {
 
 class OEconnectEditor;   /* fwd */
 
-class OEconnectJuceProcessor : public GenericProcessor {
+class OEconnectJuceProcessor : public GenericProcessor,
+                               public ITtlEventEmitter {
 public:
     OEconnectJuceProcessor();
     ~OEconnectJuceProcessor() override;
@@ -36,6 +38,18 @@ public:
     /** Pushes a changed parameter into cfg_. */
     void parameterValueChanged(Parameter* param) override;
 
+    /* --- ITtlEventEmitter. GenericProcessor::setTTLState and broadcastMessage
+     *     are protected, so only this subclass can reach them. --- */
+    void emitTtlEdge(int sample_in_block, int line, bool state) override {
+        setTTLState(sample_in_block, line, state);
+    }
+    void sendBoardTrigger(int line, int width_ms) override {
+        /* Documented Open Ephys acquisition-board remote-control grammar.
+         * Delivered only while acquisition is active; ignored by boards that do
+         * not implement handleBroadcastMessage(). */
+        broadcastMessage("ACQBOARD TRIGGER " + String(line) + " " + String(width_ms));
+    }
+
     /** Called by the editor when UI knobs change. */
     void applyConfig(const ProcessorConfig& cfg);
 
@@ -53,6 +67,9 @@ private:
     ProcessorConfig cfg_;
     std::unique_ptr<ITransport>     transport_;
     std::unique_ptr<IBoardAdapter>  board_;
+    /* Non-owning view of board_ (always the event-bus adapter in the shipped
+     * plugin); lets us push per-block state without a downcast. */
+    EventBusTtlAdapter*             ttl_adapter_ = nullptr;
     std::unique_ptr<DriftEmitter>   drift_emitter_;
     std::unique_ptr<SlowCmdWorker>  slow_worker_;
     AckOutbox                       outbox_{1024};

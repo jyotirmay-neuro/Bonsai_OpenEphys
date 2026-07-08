@@ -5,9 +5,31 @@ publishes acquisition data to Bonsai over shared memory or ZeroMQ and executes
 commands coming back (start/stop recording, set/pulse TTL).
 
 See [`docs/status.md`](../../docs/status.md) for what is functional. In short:
-data publishing, recording control and clock sync work; **TTL output does not
-reach hardware yet** (the board adapters are stubs), and `SPIKE` / `TTL_EVENT`
-frames are not emitted.
+data publishing, recording control, clock sync and TTL output all work. `SPIKE`
+and `TTL_EVENT` frames are not emitted.
+
+## TTL output
+
+The OE GUI exposes **no cross-board API** for a plugin to set a digital output
+line (`setTTLOutputBit` does not exist anywhere). The supported route is a TTL
+*event* plus a downstream **output plugin**:
+
+```
+[Acquisition Board] → [OEconnect] → [Acq Board Output]
+                          │                  │
+                    emits TTL event    event → physical line
+```
+
+OEconnect calls `addTTLChannel()` in `updateSettings()` and `setTTLState()` when a
+command arrives, exactly as Crossing Detector and Ripple Detector do. Any board
+with an output companion plugin works, with **no board-specific code**. The same
+event is captured by downstream Record Nodes, which is what makes the OE recording
+a complete copy of every edge the bridge issued.
+
+Optionally, **Direct board trigger** broadcasts `ACQBOARD TRIGGER <line> <ms>` so
+the acquisition board fires a pulse itself. Pulses only (the grammar cannot latch),
+active-acquisition only, ignored by boards that don't implement
+`handleBroadcastMessage()`. The event is always emitted first.
 
 ## Build
 
@@ -78,6 +100,7 @@ be unsafe) is locked while acquisition runs.
 | **Transport** | `Auto` / `SharedMem` (sub-ms, same machine) / `Zmq` (1–5 ms, cross-machine) |
 | **Stream raw** | Publish the broadband block each callback. On by default. |
 | **Stream filtered** | Publish a second copy tagged `FILTERED_BLOCK`. Off by default; only meaningful with an upstream filter. |
+| **Direct board trigger** | Also broadcast `ACQBOARD TRIGGER` so the board fires pulses itself. Off by default. Pulses only. |
 | **ZMQ bind address** | `127.0.0.1` by default. A routable address requires CURVE auth. |
 | **ZMQ data / command port** | `5557` / `5558`. Must differ. |
 | *(status line)* | Active transport, detected board, cumulative dropped frames. |

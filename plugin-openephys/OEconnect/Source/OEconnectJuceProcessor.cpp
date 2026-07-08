@@ -5,10 +5,7 @@
  * GenericEditor* -> AudioProcessorEditor*. */
 #include <EditorHeaders.h>
 
-#include "Boards/FileReaderAdapter.h"
-#include "Boards/RhdAcqBoardAdapter.h"
-#include "Boards/OnixAdapter.h"
-#include "Boards/NeuropixelsAdapter.h"
+#include "Boards/EventBusTtlAdapter.h"
 #include "Transport/ShmemTransport.h"
 #include "Transport/ZmqTransport.h"
 
@@ -82,6 +79,16 @@ void OEconnectJuceProcessor::registerParameters() {
         "make this meaningful, otherwise it duplicates the raw stream.",
         /*defaultValue=*/false, /*deactivateDuringAcquisition=*/false);
 
+    addBooleanParameter(
+        Parameter::PROCESSOR_SCOPE, "direct_board_trigger", "Direct board trigger",
+        "In addition to the TTL event (always emitted), broadcast the Open Ephys "
+        "acquisition board's remote-control command so the board fires the pulse "
+        "itself, skipping the downstream output plugin's response time. Applies to "
+        "PulseTtl only - the board's command grammar takes a duration and cannot "
+        "latch a line, so SetTtl always goes via the event bus. Boards that do not "
+        "understand the command ignore it, so this is harmless to leave on.",
+        /*defaultValue=*/false, /*deactivateDuringAcquisition=*/false);
+
     addStringParameter(
         Parameter::PROCESSOR_SCOPE, "zmq_bind", "ZMQ bind address",
         "Interface the ZMQ sockets bind to. 127.0.0.1 keeps the data and "
@@ -133,6 +140,8 @@ void OEconnectJuceProcessor::parameterValueChanged(Parameter* param) {
         cfg_.enable_raw = (bool)param->getValue();
     } else if (name.equalsIgnoreCase("stream_filtered")) {
         cfg_.enable_filtered = (bool)param->getValue();
+    } else if (name.equalsIgnoreCase("direct_board_trigger")) {
+        if (ttl_adapter_) ttl_adapter_->setDirectTrigger((bool)param->getValue());
     } else if (name.equalsIgnoreCase("zmq_bind") ||
                name.equalsIgnoreCase("zmq_data_port") ||
                name.equalsIgnoreCase("zmq_cmd_port")) {
@@ -157,20 +166,33 @@ void OEconnectJuceProcessor::updateSettings() {
     OECDIAG("updateSettings after getNumInputs");
     cfg_.sample_rate_hz = (getNumDataStreams() > 0) ? getSampleRate(0) : 30000.0;
     OECDIAG("updateSettings after getSampleRate");
+
+    /* Publish a TTL event channel on the first incoming stream so downstream
+     * plugins (Acq Board Output, Arduino Output, Pulse Pal, ...) and Record Nodes
+     * can see every edge the bridge issues. This is the only board-agnostic route
+     * from a plugin to a physical digital output. */
+    addTTLChannel("OEconnect TTL");
+    OECDIAG("updateSettings after addTTLChannel");
+
     selectBoardAdapter();
     OECDIAG("updateSettings after selectBoardAdapter");
 }
 
 void OEconnectJuceProcessor::selectBoardAdapter() {
     OECDIAG("selectBoardAdapter enter");
+    /* TTL output is delivered via OE's event bus regardless of which board is
+     * upstream, so there is nothing board-specific to select. We only record the
+     * upstream source's name for the status line. */
     GenericProcessor* src = getSourceNode();
-    if (!src) { board_ = std::make_unique<FileReaderAdapter>("ttl_out_log.csv"); OECDIAG("selectBoardAdapter no-src"); return; }
-    const String n = src->getName();
-    if      (n.containsIgnoreCase("rhythm"))      board_ = std::make_unique<RhdAcqBoardAdapter>(src);
-    else if (n.containsIgnoreCase("onix"))        board_ = std::make_unique<OnixAdapter>(src);
-    else if (n.containsIgnoreCase("neuropixels")) board_ = std::make_unique<NeuropixelsAdapter>(src, nullptr);
-    else if (n.containsIgnoreCase("file reader")) board_ = std::make_unique<FileReaderAdapter>("ttl_out_log.csv");
-    else                                          board_ = std::make_unique<FileReaderAdapter>("ttl_out_log.csv");
+    const std::string board_name =
+        src ? src->getName().toStdString() : std::string("(no source)");
+
+    auto adapter = std::make_unique<EventBusTtlAdapter>(
+        static_cast<ITtlEventEmitter*>(this), board_name);
+    if (auto* p = getParameter("direct_board_trigger"))
+        adapter->setDirectTrigger((bool)p->getValue());
+    ttl_adapter_ = adapter.get();
+    board_ = std::move(adapter);
     OECDIAG("selectBoardAdapter end");
 }
 
@@ -252,15 +274,10 @@ bool OEconnectJuceProcessor::startAcquisition() {
     drift_emitter_ = std::make_unique<DriftEmitter>(outbox_, sample_counter_);
     drift_emitter_->start(cfg_.sample_rate_hz);
 
-    cfg_.on_ttl_emit = [this](uint8_t line, uint8_t edge, uint64_t /*s*/) {
-        /* TODO(impl): exact addEvent() signature depends on plugin-GUI version.
-           Look in external/plugin-GUI/Source/Processors/GenericProcessor.h
-           for the current API; typical pattern:
-             addEvent(eventChannel, sample_within_block, line | (edge << 8));
-           Must remain wait-free -- OE's addEvent is a fixed-size lock-free push
-           onto the event bus. */
-        (void)this; (void)line; (void)edge;
-    };
+    /* The edge itself is published by EventBusTtlAdapter::setTtl() via
+     * setTTLState(), which is what puts it on OE's event bus and into the
+     * recording. This hook is now pure observation (telemetry / tests). */
+    cfg_.on_ttl_emit = nullptr;
 
     slow_worker_ = std::make_unique<SlowCmdWorker>(outbox_,
         [this](const SlowCmdRequest& req) -> uint16_t {
@@ -339,6 +356,8 @@ void OEconnectJuceProcessor::process(AudioBuffer<float>& buffer) {
     const uint64_t s0 = sample_counter_.fetch_add((uint64_t)ns, std::memory_order_relaxed);
     cfg_.num_channels = ch;
     cfg_.block_size   = ns;
+    /* So TTL edges emitted this block can report an absolute sample index. */
+    if (ttl_adapter_) ttl_adapter_->setBlockStartSample(s0);
     /* Qualify: unqualified 'processBlock' would bind to the inherited
        GenericProcessor::processBlock member, not our free hot-path function. */
     oec::plugin::processBlock(scratch_.data(), s0, cfg_, *transport_, *board_,

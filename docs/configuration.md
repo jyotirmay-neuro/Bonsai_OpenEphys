@@ -149,8 +149,42 @@ counted), so adding a second source node costs nothing.
 |------|--------|--------|
 | `StartRecording` | Starts every Record Node in the OE chain | **Working** |
 | `StopRecording` | Stops recording; acquisition continues | **Working** |
-| `SetTtl` | Latches a TTL line high or low | Command round-trips, **but no board adapter drives hardware yet** |
-| `PulseTtl` | Drives a line high, auto-clears after `WidthMicroseconds` | Same caveat as `SetTtl` |
+| `SetTtl` | Latches a TTL line high or low | **Working** — needs a downstream output plugin (below) |
+| `PulseTtl` | Drives a line high, auto-clears after `WidthMicroseconds` | **Working** — same, or use *Direct board trigger* |
+
+### Getting TTL to actual hardware
+
+The OE GUI has **no cross-board API** for a plugin to set a digital output line
+directly. The supported mechanism is a TTL *event*, which a downstream **output
+plugin** converts into a physical line:
+
+```
+[Acquisition Board] → [OEconnect] → [Acq Board Output]
+                          │                  │
+                    emits TTL event    event → physical line
+```
+
+OEconnect always emits the event (that is also what puts it in the OE recording).
+Put one of these downstream and point it at the line OEconnect drives:
+
+| Output plugin | Drives |
+|---|---|
+| **Acq Board Output** | Open Ephys / Intan acquisition board digital outs |
+| **Arduino Output** | An Arduino pin (lower latency) |
+| **Pulse Pal** | Pulse Pal channels (lowest latency) |
+
+This is the same path Crossing Detector and Ripple Detector use, so **any board
+with an output companion plugin works, with no board-specific code**.
+
+**Direct board trigger** (plugin parameter, off by default) additionally broadcasts
+`ACQBOARD TRIGGER <line> <ms>` so the acquisition board fires the pulse itself,
+skipping the output plugin's response time. Caveats:
+
+- **Pulses only.** The command grammar carries a duration and cannot latch a line,
+  so `SetTtl` always goes via the event bus.
+- Only delivered **while acquisition is active**.
+- Boards that don't implement `handleBroadcastMessage()` ignore it — harmless.
+- The event is still emitted first, so the recording stays complete.
 
 ---
 

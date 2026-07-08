@@ -38,8 +38,10 @@ Last verified: 2026-07-08.
 | ACK / cookie correlation | Working | Acks drained on both transports and matched by cookie. |
 | `PULSE_TTL` auto-clear scheduling | Working | Falling edge scheduled by FPGA sample index, serviced each callback. |
 | `START_RECORD` file-name prefix | **Partial** | Transmitted over the wire, but the plugin does not apply it. The OE GUI's naming settings win. |
-| `SetTtl` / `PulseTtl` hardware effect | **Stub** | Every board adapter (`RhdAcqBoardAdapter`, `OnixAdapter`, `NeuropixelsAdapter`) is a `TODO` that no-ops and returns a synthetic sample counter. Commands round-trip and are acknowledged, but **no physical line moves**. |
-| TTL echo into the OE recording | **Stub** | `on_ttl_emit` never calls `addEvent()`, so Bonsai-issued TTLs are not captured in the OE recording. This currently breaks the "OE recording is a complete record" guarantee in [architecture-rules.md](architecture-rules.md). |
+| `SetTtl` / `PulseTtl` → TTL event | Working | Published on OE's event bus via `addTTLChannel()` + `setTTLState()`. Board-agnostic. |
+| TTL echo into the OE recording | Working | The same event is captured by any downstream Record Node, satisfying the "complete record" guarantee in [architecture-rules.md](architecture-rules.md). |
+| `SetTtl` / `PulseTtl` → physical line | Working, **requires a downstream output plugin** | The GUI has no cross-board API for driving a digital output directly (`setTTLOutputBit` does not exist). Place **Acq Board Output**, **Arduino Output**, or **Pulse Pal** downstream of OEconnect; it converts the event into a line. This is the same mechanism Crossing Detector and Ripple Detector use. |
+| Direct board trigger | Working, opt-in | With the *Direct board trigger* parameter on, a **pulse** additionally broadcasts `ACQBOARD TRIGGER <line> <ms>`, so the acquisition board fires it without waiting on the downstream output plugin. Pulses only — the grammar cannot latch a line, so `SetTtl` always goes via the event bus. Boards that don't implement `handleBroadcastMessage()` ignore it. |
 
 ## Configuration
 
@@ -53,17 +55,23 @@ Last verified: 2026-07-08.
 
 ## Known gaps, in rough priority order
 
-1. **Board adapters are stubs.** No TTL output reaches hardware. This is the
-   single biggest gap: closed-loop stimulation does not work end to end. Each
-   adapter needs wiring to its board's real SDK call
-   (`setTTLOutputBit` for Rhythm, `oni_write_reg` for ONIX).
-2. **TTL echo not recorded.** `on_ttl_emit` must call `addEvent()` so the OE
-   recording captures every edge the bridge issues.
-3. **No `SPIKE` / `TTL_EVENT` emission.** Both Bonsai nodes exist and parse
-   correctly; the producer side is missing.
-4. **`FILTERED_BLOCK` is a passthrough.** Either filter in the plugin or rename
+1. **No `SPIKE` / `TTL_EVENT` emission.** Both Bonsai nodes exist and parse
+   correctly; the producer side is missing. `TtlEvents` in particular should be
+   easy now that the plugin owns a TTL event channel.
+2. **`FILTERED_BLOCK` is a passthrough.** Either filter in the plugin or rename
    the stream to reflect that it mirrors the upstream chain.
-5. **Ring geometry is not editor-configurable** even though the spec says it is.
+3. **Only plugin API v10 (GUI 1.0.x) is built.** The GUI hard-rejects any plugin
+   whose `apiVersion` differs, so each supported GUI line needs its own binary.
+   0.6.x (API v8) is not yet built or verified.
+4. **Ring geometry is not editor-configurable** even though the spec says it is.
+5. **`START_RECORD` prefix is ignored** by the plugin.
+
+### Resolved
+
+- ~~Board adapters are stubs~~ — replaced by `EventBusTtlAdapter`. There was never
+  a `setTTLOutputBit` API to call; the correct mechanism is a TTL event plus a
+  downstream output plugin, which works for every board with no board-specific code.
+- ~~TTL echo not recorded~~ — the event bus carries it to Record Nodes.
 
 ## What is verified by tests
 

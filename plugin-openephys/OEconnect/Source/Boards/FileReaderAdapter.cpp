@@ -17,11 +17,11 @@ void FileReaderAdapter::onStopAcquisition() {
     if (fp_) { std::fclose(fp_); fp_ = nullptr; }
 }
 
-uint64_t FileReaderAdapter::setTtl(uint8_t line, bool high) {
+uint64_t FileReaderAdapter::setTtl(uint8_t line, bool high, int /*sample_in_block*/) {
     /* No hardware. Bump a counter to give Bonsai something coherent to align with. */
     const uint64_t s = sample_index_.fetch_add(1, std::memory_order_relaxed) + 1;
-    /* fprintf under mutex is NOT wait-free; this adapter is the dev/CI fallback,
-       not the hot path. Real adapters override with wait-free behaviour. */
+    /* fprintf under mutex is NOT wait-free; this adapter is the dev/CI double,
+       not the hot path. EventBusTtlAdapter (the shipped one) is wait-free. */
     std::lock_guard<std::mutex> lk(mu_);
     if (fp_) std::fprintf(fp_, "%llu,%u,%u\n",
                           (unsigned long long)s, (unsigned)line, (unsigned)(high ? 1 : 0));

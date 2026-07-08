@@ -68,9 +68,6 @@ add_library(OEconnect SHARED
   ${OEC_ROOT}/Source/OEconnectEditor.cpp
   ${OEC_ROOT}/Source/Transport/ShmemTransport.cpp
   ${OEC_ROOT}/Source/Transport/ZmqTransport.cpp
-  ${OEC_ROOT}/Source/Boards/RhdAcqBoardAdapter.cpp
-  ${OEC_ROOT}/Source/Boards/OnixAdapter.cpp
-  ${OEC_ROOT}/Source/Boards/NeuropixelsAdapter.cpp
   ${OEC_ROOT}/Source/Boards/FileReaderAdapter.cpp
   ${OEC_ROOT}/Source/Sync/DriftEmitter.cpp
   ${OEC_ROOT}/Source/Util/SlowCmdWorker.cpp
