@@ -20,7 +20,7 @@ Last verified: 2026-07-08.
 | `RAW_BLOCK` publish | Working | One block per acquisition callback. |
 | Sample scaling | Working | Converted from OE's microvolt floats to `int16` ADC counts via each channel's `bitVolts`. Consumers multiply by `bitVolts` to recover microvolts. |
 | Shared-memory transport | Working | Lock-free SPSC ring, wait-free producer, sub-millisecond. |
-| ZMQ transport | Working | PUB/SUB data + REQ/REP commands. Loopback by default; non-loopback requires CURVE. |
+| ZMQ transport | Working | PUB/SUB data + REQ/REP commands. Loopback by default; non-loopback requires CURVE on **both** ends. |
 | `SYNC` heartbeat | Working | 1 Hz on the data ring, carries clock frequency + sample rate. |
 | Drift correction | Working | 60-point least-squares fit; `SampleToHostTime` anchors it to UTC. |
 | Auto-discovery | Working | Sidecar JSON + shared-region heartbeat liveness check. One sidecar per OEconnect node (`<pid>-<node_id>.json`); with several nodes in a chain, give each Bonsai source an explicit `Endpoint`. |
@@ -48,7 +48,7 @@ Last verified: 2026-07-08.
 | `SetTtl` / `PulseTtl` → physical line | Working, **requires a downstream output plugin** | The GUI has no cross-board API for driving a digital output directly (`setTTLOutputBit` does not exist). Place **Acq Board Output**, **Arduino Output**, or **Pulse Pal** downstream of OEconnect; it converts the event into a line. This is the same mechanism Crossing Detector and Ripple Detector use. |
 | Concurrent commands → `ACK(BUSY)` (§5.5) | **Missing** | Commands are not serialised per-sender; `BUSY` is never emitted. |
 | Drift divergence reset (§2.5) | **Missing** | Residual RMS > 5 us should reset the window and bump a telemetry counter; `oec_drift_residual_rms()` is never consulted. |
-| ZMQ CURVE on the **Bonsai** side (§5.7) | **Missing** | The plugin refuses an unauthenticated non-loopback bind, but `ZmqClient` cannot present a CURVE key — so the authenticated cross-machine path is **unusable end to end**. |
+| ZMQ CURVE, both ends (§5.7) | Working | Plugin refuses an unauthenticated non-loopback bind; `ZmqClient` mirrors it, requiring `OEC_ZMQ_CURVE_SERVER_PUBLIC` for any non-loopback endpoint and failing closed otherwise. Client keypair from `OEC_ZMQ_CURVE_SECRET`, else ephemeral. |
 | ZMQ `RCVHWM`, REQ heartbeat, disconnect `OnError` (§5.4/§5.6) | **Missing** | Not set on the Bonsai socket. |
 | Multi-`DataStream` sources | **Partial** | `process()` flattens every channel of every DataStream into one block using `buffer.getNumSamples()`. A source with several streams at different rates (e.g. Neuropixels AP + LFP) is mis-shaped. Should emit one block per stream, keyed by `source_id`. |
 | Direct board trigger | Working, opt-in | With the *Direct board trigger* parameter on, a **pulse** additionally broadcasts `ACQBOARD TRIGGER <line> <ms>`, so the acquisition board fires it without waiting on the downstream output plugin. Pulses only — the grammar cannot latch a line, so `SetTtl` always goes via the event bus. Boards that don't implement `handleBroadcastMessage()` ignore it. |
@@ -109,7 +109,7 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 |---|---|---|
 | `libshared` (C) | 34 | Ring buffer SPSC + eviction, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
 | Plugin (C++) | 16 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize-drop accounting |
-| Bonsai (C#) | 10 | Interop, HELLO negotiation matrix, command builder, end-to-end shared-memory round trip against a synthetic producer |
+| Bonsai (C#) | 24 | Interop, HELLO negotiation matrix, command builder, CURVE client policy (loopback exemption, fail-closed, key validation), end-to-end shared-memory round trip against a synthetic producer |
 
 The end-to-end round trip drives a real synthetic producer over shared memory and
 asserts that `RawSamples` delivers blocks, so the data path is covered from the

@@ -30,11 +30,18 @@ internal sealed class ZmqClient : ITransportClient
         var pubEp = endpointPair.Substring(0, sep);
         var repEp = endpointPair.Substring(sep + 1);
 
+        /* Throws for a non-loopback endpoint with no server key configured — the
+         * plugin would refuse such a connection anyway, so fail loudly here rather
+         * than hang on a handshake that can never complete. */
+        var curve = ZmqSecurity.Resolve(pubEp, repEp);
+
         _sub = new SubscriberSocket();
+        ZmqSecurity.Apply(_sub, curve);          // must precede Connect
         _sub.SubscribeToAnyTopic();
         _sub.Connect(pubEp);
 
         _req = new RequestSocket();
+        ZmqSecurity.Apply(_req, curve);          // must precede Connect
         _req.Connect(repEp);
 
         _cts = new CancellationTokenSource();

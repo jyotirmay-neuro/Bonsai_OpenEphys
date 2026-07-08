@@ -160,6 +160,24 @@ $env:OEC_ZMQ_CURVE_SECRET = "<40-char Z85 secret key>"
 There is no "just let me through" switch. A non-loopback bind without a key fails
 closed.
 
+### On the Bonsai machine
+
+Bonsai applies the mirror-image policy: connecting to a **non-loopback** endpoint
+requires the plugin's **public** key, or it throws rather than attempt a handshake
+the plugin would reject.
+
+```powershell
+# Required for any non-loopback endpoint: the plugin's 40-char Z85 PUBLIC key
+$env:OEC_ZMQ_CURVE_SERVER_PUBLIC = "<40-char Z85 public key>"
+
+# Optional: this client's own secret key. Omit and an ephemeral keypair is
+# generated — CURVE still authenticates the server and encrypts the channel.
+$env:OEC_ZMQ_CURVE_SECRET = "<40-char Z85 secret key>"
+```
+
+Keys live in environment variables, never in a saved workflow. Loopback endpoints
+need neither variable, matching the plugin's exemption.
+
 ---
 
 ## 4. Bonsai nodes
