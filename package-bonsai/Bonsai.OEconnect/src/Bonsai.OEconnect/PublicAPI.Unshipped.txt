@@ -17,3 +17,16 @@ Bonsai.OEconnect.Data.SessionStatus.InvalidFrameCount.get -> long
 Bonsai.OEconnect.Data.SessionStatus.InvalidFrameCount.init -> void
 Bonsai.OEconnect.Sessions.Session.DriftResetCount -> long
 Bonsai.OEconnect.Transport.ITransportClient.ConnectionLost -> System.EventHandler<string>
+Bonsai.OEconnect.Data.StreamMeta
+Bonsai.OEconnect.Data.StreamMeta.StreamMeta() -> void
+Bonsai.OEconnect.Data.StreamMeta.SourceId.get -> byte
+Bonsai.OEconnect.Data.StreamMeta.SourceId.init -> void
+Bonsai.OEconnect.Data.StreamMeta.NumChannels.get -> ushort
+Bonsai.OEconnect.Data.StreamMeta.NumChannels.init -> void
+Bonsai.OEconnect.Data.StreamMeta.SampleRateHz.get -> double
+Bonsai.OEconnect.Data.StreamMeta.SampleRateHz.init -> void
+Bonsai.OEconnect.Data.SyncPoint.Streams.get -> System.ReadOnlyMemory<Bonsai.OEconnect.Data.StreamMeta>
+Bonsai.OEconnect.Data.SyncPoint.Streams.init -> void
+Bonsai.OEconnect.Data.RawBlock.SourceId.get -> byte
+Bonsai.OEconnect.Sessions.Session.Streams.get -> System.ReadOnlyMemory<Bonsai.OEconnect.Data.StreamMeta>
+Bonsai.OEconnect.Data.RawBlock.RawBlock(ulong sampleIndex, ulong hostQpcTicks, ushort streamId, int numChannels, int numSamples, System.ReadOnlyMemory<short> samples, byte sourceId) -> void

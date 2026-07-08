@@ -231,8 +231,9 @@ void OEconnectJuceProcessor::updateSettings() {
     OECDIAG("updateSettings after getNumInputs");
     cfg_.sample_rate_hz = (getNumDataStreams() > 0) ? getSampleRate(0) : 30000.0;
     OECDIAG("updateSettings after getSampleRate");
-    /* Lets a consumer tell apart blocks from several OEconnect nodes. */
-    cfg_.source_id = (uint8_t)(getNodeId() & 0xFF);
+
+    rebuildStreamTable();
+    OECDIAG("updateSettings after rebuildStreamTable");
 
     /* Publish a TTL event channel on the first incoming stream so downstream
      * plugins (Acq Board Output, Arduino Output, Pulse Pal, ...) and Record Nodes
@@ -243,6 +244,47 @@ void OEconnectJuceProcessor::updateSettings() {
 
     selectBoardAdapter();
     OECDIAG("updateSettings after selectBoardAdapter");
+}
+
+void OEconnectJuceProcessor::rebuildStreamTable() {
+    /* Streams advance at different rates (Neuropixels AP 30 kHz vs LFP 2.5 kHz) and
+     * carry different channel counts, so they cannot share one block. Snapshot the
+     * layout here, on the message thread; process() only reads it. */
+    stream_ids_.clear();
+    stream_channels_.clear();
+    stream_sample_counters_.clear();
+    cfg_.n_streams = 0;
+
+    const Array<const DataStream*> streams = getDataStreams();
+    const int n = jmin(streams.size(), (int)OEC_MAX_STREAMS);
+
+    for (int s = 0; s < n; ++s) {
+        const DataStream* ds = streams[s];
+        if (!ds) continue;
+        const uint16 oe_stream_id = ds->getStreamId();
+        const int    chans        = ds->getChannelCount();
+
+        /* A stream's channels are not guaranteed contiguous in the process()
+         * buffer, so resolve each global index once rather than assuming a base. */
+        std::vector<int> globals;
+        globals.reserve((size_t)chans);
+        for (int c = 0; c < chans; ++c)
+            globals.push_back(getGlobalChannelIndex(oe_stream_id, c));
+
+        oec_stream_meta_t& meta = cfg_.streams[cfg_.n_streams];
+        meta.source_id      = (uint8_t)cfg_.n_streams;   /* index into cfg_.streams */
+        meta.n_channels     = (uint16_t)chans;
+        meta.sample_rate_hz = (double)ds->getSampleRate();
+
+        stream_ids_.push_back(oe_stream_id);
+        stream_channels_.push_back(std::move(globals));
+        stream_sample_counters_.push_back(0);
+        ++cfg_.n_streams;
+    }
+
+    if (streams.size() > (int)OEC_MAX_STREAMS) {
+        OECDIAG("WARNING: more DataStreams than OEC_MAX_STREAMS; extras not published");
+    }
 }
 
 void OEconnectJuceProcessor::selectBoardAdapter() {
@@ -451,40 +493,69 @@ void OEconnectJuceProcessor::process(AudioBuffer<float>& buffer) {
     if (cfg_.enable_ttl || cfg_.enable_spikes)
         checkForEvents(/*respondToSpikes=*/cfg_.enable_spikes);
 
-    const int ch = buffer.getNumChannels();
-    const int ns = buffer.getNumSamples();
-    if (scratch_.size() < (size_t)(ch * ns)) scratch_.resize((size_t)(ch * ns));
-    /* Convert float -> int16 chan-major.
-     *
-     * OE continuous buffers hold MICROVOLTS, not normalised [-1,1] audio.
-     * Scaling by 32767 (as if this were audio) saturates every sample above
-     * ~1 uV, which clips real ephys into a square wave. Divide by the channel's
-     * bitVolts instead to recover the raw ADC counts the recorder stores.
-     * Consumers multiply by bitVolts to get microvolts back. */
-    for (int c = 0; c < ch; ++c) {
-        const float* in = buffer.getReadPointer(c);
-        int16_t* out = scratch_.data() + c * ns;
+    /* The control plane is per-callback, not per-stream. Timestamp it with the
+     * first stream's counter -- that is the stream TTL edges are aligned to. */
+    const uint64_t block_start =
+        stream_sample_counters_.empty() ? 0 : stream_sample_counters_[0];
+    cfg_.block_size = (int)buffer.getNumSamples();
+    if (ttl_adapter_) ttl_adapter_->setBlockStartSample(block_start);
 
-        const ContinuousChannel* chan = getContinuousChannel(c);
-        const float bit_volts = (chan && chan->getBitVolts() > 0.0f)
-                                    ? chan->getBitVolts() : 1.0f;
-        const float inv_bit_volts = 1.0f / bit_volts;
+    oec::plugin::processControl(block_start, cfg_, *transport_, *board_,
+                                outbox_, &pulse_sched_);
 
-        for (int s = 0; s < ns; ++s) {
-            float v = in[s] * inv_bit_volts;
-            if (v > 32767.f) v = 32767.f; else if (v < -32768.f) v = -32768.f;
-            out[s] = (int16_t)v;
+    if (!cfg_.enable_continuous) return;
+
+    /* One RAW_BLOCK per DataStream. Streams carry different channel counts and
+     * advance at different rates -- Neuropixels AP at 30 kHz alongside LFP at
+     * 2.5 kHz -- so flattening them into a single block with one sample count
+     * mis-shapes every stream but the first. */
+    for (int s = 0; s < cfg_.n_streams; ++s) {
+        const uint16 oe_stream_id = stream_ids_[(size_t)s];
+        const auto&  globals      = stream_channels_[(size_t)s];
+        const int    chans        = (int)globals.size();
+        const int    ns           = (int)getNumSamplesInBlock(oe_stream_id);
+        if (chans == 0 || ns == 0) continue;
+
+        const size_t need = (size_t)chans * (size_t)ns;
+        if (scratch_.size() < need) scratch_.resize(need);
+
+        /* Convert float -> int16, channel-major, per stream.
+         *
+         * OE continuous buffers hold MICROVOLTS, not normalised [-1,1] audio.
+         * Scaling by 32767 (as if this were audio) saturates every sample above
+         * ~1 uV, which clips real ephys into a square wave. Divide by the channel's
+         * bitVolts instead to recover the raw ADC counts the recorder stores.
+         * Consumers multiply by bitVolts to get microvolts back. */
+        for (int c = 0; c < chans; ++c) {
+            const int global = globals[(size_t)c];
+            const float* in = buffer.getReadPointer(global);
+            int16_t* out = scratch_.data() + (size_t)c * ns;
+
+            const ContinuousChannel* chan = getContinuousChannel(global);
+            const float bit_volts = (chan && chan->getBitVolts() > 0.0f)
+                                        ? chan->getBitVolts() : 1.0f;
+            const float inv_bit_volts = 1.0f / bit_volts;
+
+            for (int i = 0; i < ns; ++i) {
+                float v = in[i] * inv_bit_volts;
+                if (v > 32767.f) v = 32767.f; else if (v < -32768.f) v = -32768.f;
+                out[i] = (int16_t)v;
+            }
         }
+
+        /* Each stream owns its sample counter: a shared one would misdate every
+         * stream running slower than the fastest. */
+        const uint64_t s0 = stream_sample_counters_[(size_t)s];
+        stream_sample_counters_[(size_t)s] = s0 + (uint64_t)ns;
+
+        writeContinuousBlock(*transport_, cfg_, scratch_.data(),
+                             (uint16_t)chans, (uint16_t)ns, s0,
+                             /*source_id=*/(uint8_t)s);
     }
-    const uint64_t s0 = sample_counter_.fetch_add((uint64_t)ns, std::memory_order_relaxed);
-    cfg_.num_channels = ch;
-    cfg_.block_size   = ns;
-    /* So TTL edges emitted this block can report an absolute sample index. */
-    if (ttl_adapter_) ttl_adapter_->setBlockStartSample(s0);
-    /* Qualify: unqualified 'processBlock' would bind to the inherited
-       GenericProcessor::processBlock member, not our free hot-path function. */
-    oec::plugin::processBlock(scratch_.data(), s0, cfg_, *transport_, *board_,
-                              outbox_, &pulse_sched_);
+
+    /* Keep the shared counter aligned with stream 0 for SYNC / drift. */
+    if (!stream_sample_counters_.empty())
+        sample_counter_.store(stream_sample_counters_[0], std::memory_order_relaxed);
 }
 
 void OEconnectJuceProcessor::applyConfig(const ProcessorConfig& cfg) { cfg_ = cfg; }

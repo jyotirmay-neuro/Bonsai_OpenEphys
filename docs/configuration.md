@@ -209,12 +209,19 @@ counted), so adding a second source node costs nothing.
 
 | Node | Emits | Status |
 |------|-------|--------|
-| `RawSamples` | One `RawBlock` per callback (32 samples ≈ 1.07 ms at 30 kHz) | **Working** |
+| `RawSamples` | One `RawBlock` **per DataStream** per callback | **Working** |
 | `FilteredSamples` | `RawBlock` from the `FILTERED_BLOCK` stream | Working — from an OEconnect node labelled `Filtered` (see *Stream label*) |
 | `SyncPoints` | One `SyncPoint` per second (sample index ↔ host clock) | **Working** |
 | `OpenEphysSession` | One `SessionStatus` per second (liveness, frame/drop counts) | **Working** |
 | `Spikes` | `SpikeEvent` | **Working** — needs a Spike Detector *upstream* of OEconnect |
 | `TtlEvents` | `TtlEvent` | **Working** — board digital inputs + upstream event generators |
+
+> **Multi-stream sources.** A Neuropixels probe presents AP (30 kHz) and LFP
+> (2.5 kHz) as separate OE DataStreams. OEconnect publishes one block per stream, so
+> `RawSamples` interleaves blocks with different `SourceId`, channel counts and
+> sample clocks. Filter on `SourceId` to isolate one stream; look it up in
+> `SyncPoint.Streams` (or `Session.Streams`) to get its channel count and rate.
+> Single-stream sources always emit `SourceId = 0` and need no special handling.
 
 ### Transforms
 

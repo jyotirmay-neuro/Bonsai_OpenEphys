@@ -18,8 +18,25 @@ public readonly struct RawBlock
     public int NumSamples { get; }
     public ReadOnlyMemory<short> Samples { get; }
 
+    /// <summary>
+    /// Which OpenEphys DataStream produced this block. One block is published per
+    /// stream per acquisition callback, so with a multi-stream source (Neuropixels
+    /// AP + LFP) blocks with different <see cref="SourceId"/> interleave, each with
+    /// its own channel count, sample rate and <see cref="SampleIndex"/> clock.
+    /// Match it against <see cref="SyncPoint.Streams"/> to recover those.
+    /// </summary>
+    public byte SourceId { get; }
+
+    /// <summary>Retained overload; equivalent to <c>SourceId = 0</c>.</summary>
     public RawBlock(ulong sampleIndex, ulong hostQpcTicks, ushort streamId,
                     int numChannels, int numSamples, ReadOnlyMemory<short> samples)
+        : this(sampleIndex, hostQpcTicks, streamId, numChannels, numSamples, samples, 0)
+    {
+    }
+
+    public RawBlock(ulong sampleIndex, ulong hostQpcTicks, ushort streamId,
+                    int numChannels, int numSamples, ReadOnlyMemory<short> samples,
+                    byte sourceId)
     {
         SampleIndex = sampleIndex;
         HostQpcTicks = hostQpcTicks;
@@ -27,10 +44,11 @@ public readonly struct RawBlock
         NumChannels = numChannels;
         NumSamples = numSamples;
         Samples = samples;
+        SourceId = sourceId;
     }
 
     /// <summary>Returns an owning copy backed by <c>new short[]</c>.</summary>
     public RawBlock Clone() =>
         new(SampleIndex, HostQpcTicks, StreamId, NumChannels, NumSamples,
-            Samples.ToArray());
+            Samples.ToArray(), SourceId);
 }

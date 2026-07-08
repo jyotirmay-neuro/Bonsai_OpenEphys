@@ -195,6 +195,110 @@ public class FrameValidationTests
         Assert.Equal(channels * samples, got.Value.Samples.Length);
     }
 
+    /// <summary>
+    /// Spec §3.1: SYNC carries {qpc_freq, sample_rate} followed by one packed
+    /// 11-byte stream_meta per stream. Count is derived from payload_len, so an old
+    /// producer advertising none must still parse.
+    /// </summary>
+    [Fact]
+    public unsafe void SyncFrameStreamMetaIsParsed()
+    {
+        var name = MakeShmName("syncmeta");
+        using var prod = new RawProducer(name);
+
+        const int metaSize = 11;
+        prod.Emit(OecStreams.Sync, (uint)(16 + 2 * metaSize), slot =>
+        {
+            byte* body = (byte*)slot + sizeof(OecFrameHeader);
+            *(ulong*)(body + 0) = 10_000_000ul;      // qpc_freq_hz
+            *(double*)(body + 8) = 30000.0;          // fpga_sample_rate_hz
+
+            byte* m0 = body + 16;
+            m0[0] = 0;
+            *(ushort*)(m0 + 1) = 384;
+            *(double*)(m0 + 3) = 30000.0;
+
+            byte* m1 = m0 + metaSize;
+            m1[0] = 1;
+            *(ushort*)(m1 + 1) = 384;
+            *(double*)(m1 + 3) = 2500.0;
+        });
+
+        using var session = AttachConsumer(name);
+        SyncPoint? sync = null;
+        using var sub = session.SyncSubject.Subscribe(s => sync ??= s, _ => { });
+        session.StartReader();
+
+        SpinUntil(() => sync != null, TimeSpan.FromSeconds(2));
+
+        Assert.NotNull(sync);
+        Assert.Equal(30000.0, sync!.Value.FpgaSampleRateHz);
+
+        var streams = sync.Value.Streams.Span;
+        Assert.Equal(2, streams.Length);
+        Assert.Equal(0, streams[0].SourceId);
+        Assert.Equal(384, streams[0].NumChannels);
+        Assert.Equal(30000.0, streams[0].SampleRateHz);
+        Assert.Equal(1, streams[1].SourceId);
+        Assert.Equal(2500.0, streams[1].SampleRateHz);
+
+        /* Also cached on the session for lookup by source_id. */
+        Assert.Equal(2, session.Streams.Length);
+    }
+
+    /// <summary>A producer that advertises no streams (16-byte SYNC) still parses.</summary>
+    [Fact]
+    public unsafe void SyncFrameWithoutStreamMetaStillParses()
+    {
+        var name = MakeShmName("syncbare");
+        using var prod = new RawProducer(name);
+        prod.Emit(OecStreams.Sync, 16, slot =>
+        {
+            byte* body = (byte*)slot + sizeof(OecFrameHeader);
+            *(ulong*)(body + 0) = 10_000_000ul;
+            *(double*)(body + 8) = 25000.0;
+        });
+
+        using var session = AttachConsumer(name);
+        SyncPoint? sync = null;
+        using var sub = session.SyncSubject.Subscribe(s => sync ??= s, _ => { });
+        session.StartReader();
+
+        SpinUntil(() => sync != null, TimeSpan.FromSeconds(2));
+
+        Assert.NotNull(sync);
+        Assert.Equal(25000.0, sync!.Value.FpgaSampleRateHz);
+        Assert.Equal(0, sync.Value.Streams.Length);
+    }
+
+    /// <summary>Blocks carry the emitting stream's source_id (spec §3.2).</summary>
+    [Fact]
+    public unsafe void BlockCarriesItsSourceId()
+    {
+        var name = MakeShmName("srcid");
+        using var prod = new RawProducer(name);
+
+        const int channels = 2, samples = 4;
+        uint payload = (uint)(sizeof(OecBlockSubheader) + channels * samples * sizeof(short));
+        prod.Emit(OecStreams.RawBlock, payload, slot =>
+        {
+            var sh = (OecBlockSubheader*)((byte*)slot + sizeof(OecFrameHeader));
+            sh->NumChannels = channels;
+            sh->NumSamples = samples;
+            sh->SourceId = 3;
+        });
+
+        using var session = AttachConsumer(name);
+        RawBlock? got = null;
+        using var sub = session.RawSubject.Subscribe(b => got ??= b.Clone(), _ => { });
+        session.StartReader();
+
+        SpinUntil(() => got != null, TimeSpan.FromSeconds(2));
+
+        Assert.NotNull(got);
+        Assert.Equal(3, got!.Value.SourceId);
+    }
+
     [Fact]
     public unsafe void ErrorFrameSurfacesCodeAndMessage()
     {

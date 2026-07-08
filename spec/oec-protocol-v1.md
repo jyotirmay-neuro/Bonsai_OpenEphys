@@ -121,9 +121,17 @@ struct oec_block_subheader {
 ```
 
 `SYNC` frames additionally carry an array of
-`{source_id_u8, n_channels_u16, sample_rate_hz_f64}` triples — one per
-active source — so a late-joining subscriber can reconstruct the layout
-without waiting for the next RAW frame.
+`{source_id_u8, n_channels_u16, sample_rate_hz_f64}` triples (11 bytes, packed) —
+one per active source — so a late-joining subscriber can reconstruct the layout
+without waiting for the next RAW frame. The count is derived from `payload_len`:
+`n = (payload_len - 16) / 11`. A producer advertising none emits a bare 16-byte
+head, which older consumers already parse.
+
+`source_id` identifies the emitting **DataStream**, and indexes that `stream_meta[]`
+array. One `RAW_BLOCK` is published per stream per acquisition callback: streams
+advance at different rates (Neuropixels AP at 30 kHz alongside LFP at 2.5 kHz) and
+carry different channel counts, so each owns its own `sample_index` clock. Blocks
+from different streams therefore interleave on the data ring.
 
 ## 4. Shared-memory region
 

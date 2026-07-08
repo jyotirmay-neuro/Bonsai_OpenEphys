@@ -29,7 +29,7 @@ Last verified: 2026-07-08.
 | Frame magic/version check on receive (§2.6, §8.4) | Working | Both sides call `oec_frame_validate()` before touching any field. The plugin refuses a command whose major differs and answers with `ERROR(PROTOCOL_VERSION_MISMATCH)`; the consumer drops the frame, counts it in `InvalidFrameCount`, and raises a fatal `OnError` on a major mismatch. |
 | `BIT_CONTINUATION` multi-slot frames (§4.3) | **Missing** | Frames larger than one slot should span up to 4 slots, else `ERROR(FRAME_TOO_LARGE)`. Instead they are dropped and counted. |
 | `ERROR` frame handling | Working | Producer emits `{code_u16, utf8_len_u16, utf8_msg[]}` per §3.1 (the previous hand-rolled emission omitted the length field). Consumer parses it into `SessionStatus.LastErrorCode` / `.LastErrorMessage`. Codes are now enumerated in spec §3.1. |
-| `SYNC` `stream_meta[]` triples (§3.1) | **Missing** | `SYNC` carries `qpc_freq_hz` + `fpga_sample_rate_hz` only; the per-source `{source_id, n_channels, sample_rate}` array is not emitted. |
+| `SYNC` `stream_meta[]` triples (§3.1) | Working | SYNC carries the clock head plus one packed 11-byte `{source_id, n_channels, sample_rate}` per stream. Count derives from `payload_len`, so a producer advertising none stays readable. Surfaced as `SyncPoint.Streams` and cached on `Session.Streams`. |
 | CRC-16 (§2.1, optional) | **Missing** | `oec_crc16()` exists and is unit-tested but is never computed or verified on the hot path. `crc16` is always 0, which the spec permits. |
 | `FILTERED_BLOCK` publish | Working | The node publishes its input **once**, under the stream id chosen by the *Stream label* parameter (`Raw` or `Filtered`). It does not filter — the label must describe where you placed the node. For both streams, branch the chain and run two OEconnect nodes. |
 | `SPIKE` publish | Working | Republished from OE's event bus via `checkForEvents(true)` + `handleSpike()`. Requires an upstream Spike Detector/sorter — OEconnect does not detect spikes. Waveforms scaled to int16 ADC counts by each spike channel's `bitVolts`. |
@@ -51,7 +51,7 @@ Last verified: 2026-07-08.
 | Drift divergence reset (§2.5) | Working | After each fit the residual RMS is converted to microseconds using the SYNC-reported clock frequency; above 5 µs the window is reset and `SessionStatus.DriftResetCount` increments. Deliberately not an `OnError` — drift glitches are expected. |
 | ZMQ CURVE, both ends (§5.7) | Working | Plugin refuses an unauthenticated non-loopback bind; `ZmqClient` mirrors it, requiring `OEC_ZMQ_CURVE_SERVER_PUBLIC` for any non-loopback endpoint and failing closed otherwise. Client keypair from `OEC_ZMQ_CURVE_SECRET`, else ephemeral. |
 | ZMQ `RCVHWM`, REQ heartbeat, disconnect `OnError` (§5.4/§5.6) | Working | SUB sets `ReceiveHighWatermark = 4096`; REQ sets a 500 ms heartbeat with a 2 s timeout. A `NetMQMonitor` disconnect, or an unanswered command, raises `ConnectionLost`, which the Session turns into `OnError` on the sources — once, so a flapping peer cannot spam it. |
-| Multi-`DataStream` sources | **Partial** | `process()` flattens every channel of every DataStream into one block using `buffer.getNumSamples()`. A source with several streams at different rates (e.g. Neuropixels AP + LFP) is mis-shaped. Should emit one block per stream, keyed by `source_id`. |
+| Multi-`DataStream` sources | Working | One `RAW_BLOCK` per DataStream per callback, each with its own channel count, `getNumSamplesInBlock()` sample count, and **its own sample clock** — a shared counter would misdate every stream slower than the fastest. `source_id` indexes the SYNC stream table; `RawBlock.SourceId` exposes it. Channel indices resolved via `getGlobalChannelIndex()`, since a stream's channels are not guaranteed contiguous. |
 | Direct board trigger | Working, opt-in | With the *Direct board trigger* parameter on, a **pulse** additionally broadcasts `ACQBOARD TRIGGER <line> <ms>`, so the acquisition board fires it without waiting on the downstream output plugin. Pulses only — the grammar cannot latch a line, so `SetTtl` always goes via the event bus. Boards that don't implement `handleBroadcastMessage()` ignore it. |
 
 ## Configuration
@@ -108,8 +108,8 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 | Suite | Count | Covers |
 |---|---|---|
 | `libshared` (C) | 35 | Ring buffer SPSC + eviction accounting, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
-| Plugin (C++) | 25 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming, command frame validation, slow-command BUSY gating (incl. slot held until the dispatcher returns) |
-| Bonsai (C#) | 33 | Interop, HELLO negotiation matrix, command builder, CURVE client policy, frame validation, ERROR frame parsing, drift residual/reset semantics, non-default ring geometry, end-to-end shared-memory round trip |
+| Plugin (C++) | 27 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming, command frame validation, slow-command BUSY gating (incl. slot held until the dispatcher returns) |
+| Bonsai (C#) | 36 | Interop, HELLO negotiation matrix, command builder, CURVE client policy, frame validation, ERROR frame parsing, drift residual/reset semantics, non-default ring geometry, SYNC stream_meta parsing, block source_id, end-to-end shared-memory round trip |
 
 The end-to-end round trip drives a real synthetic producer over shared memory and
 asserts that `RawSamples` delivers blocks, so the data path is covered from the

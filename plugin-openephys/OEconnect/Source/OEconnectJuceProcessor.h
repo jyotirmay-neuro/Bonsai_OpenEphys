@@ -68,6 +68,8 @@ public:
 private:
     void selectBoardAdapter();
     void selectTransport();
+    /** Snapshots the incoming DataStreams (channel indices, rates) for process(). */
+    void rebuildStreamTable();
     /** Rebuilds cfg_.zmq_endpoint from the bind-address / port parameters. */
     void rebuildZmqEndpoint();
 
@@ -84,6 +86,12 @@ private:
     std::vector<int16_t>            scratch_;
     std::vector<int16_t>            spike_scratch_;   /* waveform float -> int16 */
     PulseScheduler                  pulse_sched_;
+
+    /* Per-DataStream layout, rebuilt in updateSettings() and read on the audio
+     * thread. Parallel arrays indexed by source_id (= index into cfg_.streams). */
+    std::vector<uint16>              stream_ids_;              /* OE stream ids */
+    std::vector<std::vector<int>>    stream_channels_;         /* global channel indices */
+    std::vector<uint64_t>            stream_sample_counters_;  /* per-stream sample clock */
 };
 
 }  // namespace oec::plugin

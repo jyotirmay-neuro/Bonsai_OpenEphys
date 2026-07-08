@@ -53,6 +53,16 @@ public sealed class Session : IDisposable
     /// <summary>Times the drift window was reset for divergence (spec §2.5).</summary>
     public long DriftResetCount;
 
+    /* Latest stream table from SYNC (spec §3.1). Replaced wholesale, never mutated,
+     * so readers on other threads always see a coherent array. */
+    private StreamMeta[] _streams = Array.Empty<StreamMeta>();
+
+    /// <summary>
+    /// Geometry of each DataStream the producer advertises, indexed by
+    /// <see cref="StreamMeta.SourceId"/>. Empty until the first SYNC frame (~1 s).
+    /// </summary>
+    public ReadOnlyMemory<StreamMeta> Streams => Volatile.Read(ref _streams);
+
     /* HELLO negotiation state (spec v1.1 §8). */
     public ushort RemoteMajor;
     public ushort RemoteMinor;
@@ -194,12 +204,43 @@ public sealed class Session : IDisposable
     {
         double rate = 30000.0;
         ulong freq = 0;
-        /* SYNC body (spec §3.1): {qpc_freq_hz_u64, fpga_sample_rate_hz_f64}. */
-        if (len >= sizeof(OecFrameHeader) + 16)
+        StreamMeta[] streams = Array.Empty<StreamMeta>();
+
+        /* SYNC body (spec §3.1): {qpc_freq_hz_u64, fpga_sample_rate_hz_f64} followed
+         * by one 11-byte stream_meta per active stream. Count is derived from
+         * payload_len, so a producer advertising none stays readable. */
+        const int headSize = 16;
+        const int metaSize = 11;   // source_id u8 + n_channels u16 + sample_rate f64, packed
+
+        int avail = len - sizeof(OecFrameHeader);
+        int payload = h.PayloadLen <= (uint)avail ? (int)h.PayloadLen : avail;
+
+        if (payload >= headSize)
         {
             byte* body = p + sizeof(OecFrameHeader);
             freq = *(ulong*)(body + 0);
             rate = *(double*)(body + 8);
+
+            int nStreams = (payload - headSize) / metaSize;
+            if (nStreams > 0)
+            {
+                streams = new StreamMeta[nStreams];
+                byte* meta = body + headSize;
+                for (int i = 0; i < nStreams; ++i, meta += metaSize)
+                {
+                    /* Unaligned reads: the triples are packed, not padded. */
+                    streams[i] = new StreamMeta
+                    {
+                        SourceId     = meta[0],
+                        NumChannels  = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+                                           new ReadOnlySpan<byte>(meta + 1, 2)),
+                        SampleRateHz = BitConverter.Int64BitsToDouble(
+                                           System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(
+                                               new ReadOnlySpan<byte>(meta + 3, 8))),
+                    };
+                }
+                Volatile.Write(ref _streams, streams);
+            }
         }
 
         /* Feed the drift regression from SYNC only (~1 Hz), matching the
@@ -229,7 +270,8 @@ public sealed class Session : IDisposable
         SyncSubject.OnNext(new SyncPoint {
             SampleIndex = h.SampleIndex,
             HostQpcTicks = h.HostQpcTicks,
-            FpgaSampleRateHz = rate
+            FpgaSampleRateHz = rate,
+            Streams = streams
         });
     }
 
@@ -345,7 +387,7 @@ public sealed class Session : IDisposable
             }
         }
         var block = new RawBlock(h.SampleIndex, h.HostQpcTicks, h.StreamId,
-                                 sh.NumChannels, sh.NumSamples, samples);
+                                 sh.NumChannels, sh.NumSamples, samples, sh.SourceId);
         (raw ? RawSubject : FilteredSubject).OnNext(block);
     }
 

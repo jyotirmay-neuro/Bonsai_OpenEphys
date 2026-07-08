@@ -500,6 +500,120 @@ SetTtlBody makeSetTtl(uint8_t line, uint8_t edge) {
 }
 }  // namespace
 
+/* Spec §3.2: one block per DataStream, each stamped with its own source_id,
+ * channel count, sample count and sample clock. Flattening them into one block
+ * (as before) mis-shapes every stream but the first. */
+TEST(HotPath, EachStreamGetsItsOwnBlockWithItsOwnGeometry) {
+    ShmemTransport t;
+    std::string name = uniq() + ".streams";
+    ASSERT_TRUE(t.start(name));
+
+    ProcessorConfig cfg;
+    cfg.enable_continuous = true;
+    cfg.continuous_stream_id = OEC_STREAM_RAW_BLOCK;
+
+    /* Stand in for a Neuropixels probe: AP 30 kHz x 4 ch, LFP 2.5 kHz x 2 ch. */
+    cfg.n_streams = 2;
+    cfg.streams[0] = { /*source_id=*/0, /*n_channels=*/4, /*rate=*/30000.0 };
+    cfg.streams[1] = { /*source_id=*/1, /*n_channels=*/2, /*rate=*/2500.0 };
+
+    std::vector<int16_t> ap(4 * 12, 11);
+    std::vector<int16_t> lfp(2 * 3, 22);
+
+    writeContinuousBlock(t, cfg, ap.data(), 4, 12, /*sample_index=*/1200, /*source_id=*/0);
+    writeContinuousBlock(t, cfg, lfp.data(), 2, 3, /*sample_index=*/100, /*source_id=*/1);
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+    uint32_t sz = 0;
+
+    const void* f0 = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(f0, nullptr);
+    const auto* h0 = (const oec_frame_header_t*)f0;
+    const auto* s0 = (const oec_block_subheader_t*)((const uint8_t*)f0 + sizeof(*h0));
+    EXPECT_EQ(h0->sample_index, 1200u);
+    EXPECT_EQ(s0->source_id, 0);
+    EXPECT_EQ(s0->n_channels, 4);
+    EXPECT_EQ(s0->n_samples, 12);
+    oec_ringbuf_consume(rb);
+
+    const void* f1 = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(f1, nullptr);
+    const auto* h1 = (const oec_frame_header_t*)f1;
+    const auto* s1 = (const oec_block_subheader_t*)((const uint8_t*)f1 + sizeof(*h1));
+    EXPECT_EQ(h1->sample_index, 100u) << "each stream carries its own sample clock";
+    EXPECT_EQ(s1->source_id, 1);
+    EXPECT_EQ(s1->n_channels, 2);
+    EXPECT_EQ(s1->n_samples, 3);
+    oec_ringbuf_detach(rb);
+
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
+/* Spec §3.1: SYNC advertises every stream so a late subscriber can reconstruct
+ * the layout without waiting for a data block. */
+TEST(HotPath, SyncFrameCarriesStreamMetaForEveryStream) {
+    ShmemTransport t;
+    std::string name = uniq() + ".syncmeta";
+    ASSERT_TRUE(t.start(name));
+
+    ProcessorConfig cfg;
+    cfg.enable_continuous = false;
+    cfg.enable_spikes = cfg.enable_ttl = false;
+    cfg.n_streams = 2;
+    cfg.streams[0] = { 0, 384, 30000.0 };
+    cfg.streams[1] = { 1, 384, 2500.0 };
+
+    AckOutbox outbox(64);
+    AckEntry e{};
+    e.cmd_id = OEC_STREAM_SYNC;
+    e.sample_index = 4242;
+    e.host_qpc_ticks = 777;
+    e.qpc_freq_hz = 10000000ull;
+    e.fpga_sample_rate_hz = 30000.0;
+    ASSERT_TRUE(outbox.tryPush(e));
+
+    FileReaderAdapter board("ttl_out_log.csv");
+    std::vector<int16_t> dummy(1, 0);
+    processControl(0, cfg, t, board, outbox, nullptr);
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+    uint32_t sz = 0;
+    const void* f = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(f, nullptr);
+
+    const auto* fh = (const oec_frame_header_t*)f;
+    EXPECT_EQ(fh->stream_id, OEC_STREAM_SYNC);
+    EXPECT_EQ(fh->payload_len,
+              sizeof(oec_sync_head_t) + 2 * sizeof(oec_stream_meta_t));
+
+    const uint8_t* body = (const uint8_t*)f + sizeof(*fh);
+    oec_sync_head_t head{};
+    std::memcpy(&head, body, sizeof(head));
+    EXPECT_EQ(head.qpc_freq_hz, 10000000ull);
+    EXPECT_DOUBLE_EQ(head.fpga_sample_rate_hz, 30000.0);
+
+    oec_stream_meta_t m0{}, m1{};
+    std::memcpy(&m0, body + sizeof(head), sizeof(m0));
+    std::memcpy(&m1, body + sizeof(head) + sizeof(m0), sizeof(m1));
+    EXPECT_EQ(m0.source_id, 0);   EXPECT_EQ(m0.n_channels, 384);
+    EXPECT_DOUBLE_EQ(m0.sample_rate_hz, 30000.0);
+    EXPECT_EQ(m1.source_id, 1);   EXPECT_EQ(m1.n_channels, 384);
+    EXPECT_DOUBLE_EQ(m1.sample_rate_hz, 2500.0);
+
+    oec_ringbuf_detach(rb);
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
 /* Spec §5.5: one slow command in flight at a time; the loser gets ACK(BUSY)
  * rather than being silently queued behind the first. */
 TEST(HotPath, SecondSlowCommandWhileOneInFlightGetsBusy) {

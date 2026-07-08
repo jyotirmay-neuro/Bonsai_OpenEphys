@@ -43,6 +43,15 @@ struct ProcessorConfig {
      * data is overwritten. slot_count must be a power of two. */
     uint32_t slot_size  = OEC_DEFAULT_SLOT_SIZE;
     uint32_t slot_count = OEC_DEFAULT_SLOT_COUNT;
+
+    /* Snapshot of the incoming DataStreams, refreshed in updateSettings().
+     * `source_id` is the index into this table and is stamped on every block, so a
+     * consumer can map a block back to its stream's channel count and sample rate
+     * via the SYNC frame's stream_meta[] (spec §3.1, §3.2). One RAW_BLOCK is
+     * published per stream per callback: streams advance at different rates
+     * (Neuropixels AP 30 kHz vs LFP 2.5 kHz), so they cannot share a block. */
+    oec_stream_meta_t streams[OEC_MAX_STREAMS] = {};
+    int               n_streams = 0;
     int    block_size      = 32;
     int    num_channels    = 256;
     double sample_rate_hz  = 30000.0;
@@ -78,6 +87,34 @@ void processBlock(
     IBoardAdapter& board,
     AckOutbox& outbox,
     PulseScheduler* pulses = nullptr);
+
+/**
+ * Publish one continuous block for a single DataStream.
+ *
+ * `input` is `n_channels * n_samples` int16 ADC counts, channel-major.
+ * `source_id` indexes ProcessorConfig::streams and is stamped into the subheader.
+ * `sample_index` is that stream's own running sample counter — streams advance at
+ * different rates, so a shared counter would misdate everything but the fastest.
+ *
+ * Wait-free; audio thread. Frames too large for one ring slot are dropped and
+ * counted (see ITransport::noteDropped).
+ */
+void writeContinuousBlock(ITransport& transport, const ProcessorConfig& config,
+                          const int16_t* input,
+                          uint16_t n_channels, uint16_t n_samples,
+                          uint64_t sample_index, uint8_t source_id);
+
+/**
+ * Control-plane half of a process() tick: service due TTL pulses, drain the command
+ * ring, drain the ack outbox. Split out from processBlock() so the JUCE processor
+ * can run it once per callback and then publish one block per DataStream.
+ */
+void processControl(uint64_t sample_index,
+                    const ProcessorConfig& config,
+                    ITransport& transport,
+                    IBoardAdapter& board,
+                    AckOutbox& outbox,
+                    PulseScheduler* pulses = nullptr);
 
 /**
  * Publish one ERROR frame (spec §3.1: {code_u16, utf8_len_u16, utf8_msg[]}).

@@ -29,13 +29,18 @@ uint64_t qpc_now() {
 }
 #endif
 
-void writeRawBlock(ITransport& t, const ProcessorConfig& cfg,
-                   const int16_t* input, uint64_t sample_index,
-                   uint16_t stream_id, uint16_t flags)
+}  // namespace
+
+void writeContinuousBlock(ITransport& t, const ProcessorConfig& cfg,
+                          const int16_t* input,
+                          uint16_t n_channels, uint16_t n_samples,
+                          uint64_t sample_index, uint8_t source_id)
 {
-    const uint32_t payload =
-        (uint32_t)(sizeof(oec_block_subheader_t) +
-                   (size_t)cfg.num_channels * (size_t)cfg.block_size * sizeof(int16_t));
+    if (!cfg.enable_continuous || n_channels == 0 || n_samples == 0) return;
+
+    const size_t samples_bytes = (size_t)n_channels * (size_t)n_samples * sizeof(int16_t);
+    const uint32_t payload = (uint32_t)(sizeof(oec_block_subheader_t) + samples_bytes);
+
     uint32_t cap = 0;
     uint8_t* slot = t.acquireDataSlot(&cap, /*dropOldest=*/true);
     if (!slot) return;
@@ -43,26 +48,26 @@ void writeRawBlock(ITransport& t, const ProcessorConfig& cfg,
     if (cap < need) {
         /* The block does not fit one ring slot (n_channels x n_samples x 2 B + 40 B
          * > slot_size). Returning silently here made the whole stream vanish with
-         * no diagnostic, so count it: the editor's dropped-frame readout and
-         * Bonsai's SessionStatus.DropCount are the only clues the user gets. */
+         * no diagnostic, so count it and raise slot_size (spec §4.7). */
         t.noteDropped();
         return;
     }
 
     auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
     /* Tell the consumer about any gap that opened since the last frame (spec §4.3). */
-    oec_frame_init(h, stream_id, payload, sample_index, qpc_now(),
-                   (uint16_t)(flags | t.consumePendingFlags()));
+    oec_frame_init(h, cfg.continuous_stream_id, payload, sample_index, qpc_now(),
+                   t.consumePendingFlags());
     auto* sh = reinterpret_cast<oec_block_subheader_t*>(slot + sizeof(*h));
-    sh->n_channels = (uint16_t)cfg.num_channels;
-    sh->n_samples  = (uint16_t)cfg.block_size;
+    sh->n_channels = n_channels;
+    sh->n_samples  = n_samples;
     sh->dtype      = OEC_DTYPE_INT16;
-    sh->source_id  = cfg.source_id;
+    sh->source_id  = source_id;
     sh->reserved   = 0;
-    std::memcpy(slot + sizeof(*h) + sizeof(*sh), input,
-                (size_t)cfg.num_channels * cfg.block_size * sizeof(int16_t));
+    std::memcpy(slot + sizeof(*h) + sizeof(*sh), input, samples_bytes);
     t.publishData((uint32_t)need);
 }
+
+namespace {
 
 void emitAck(ITransport& t, uint32_t cookie, uint16_t status,
              uint64_t sample_index)
@@ -212,32 +217,35 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cf
     }
 }
 
-/* SYNC body carried on the data ring (spec §3.1). */
-#pragma pack(push, 1)
-struct oec_sync_body {
-    uint64_t qpc_freq_hz;
-    double   fpga_sample_rate_hz;
-};
-#pragma pack(pop)
-
-void drainAckOutbox(ITransport& t, AckOutbox& outbox)
+void drainAckOutbox(ITransport& t, AckOutbox& outbox, const ProcessorConfig& cfg)
 {
     AckEntry e{};
     while (outbox.tryPop(e)) {
         if (e.cmd_id == OEC_STREAM_SYNC) {
-            /* SYNC belongs on the DATA ring (spec §4.5), not the ack ring.
-             * Emit the periodic heartbeat with its {qpc_freq, sample_rate}
-             * body so late subscribers can reconstruct the clock mapping. */
+            /* SYNC belongs on the DATA ring (spec §4.5), not the ack ring. The head
+             * carries the clock mapping; the trailing stream_meta[] lets a
+             * late-joining subscriber reconstruct every stream's channel count and
+             * sample rate without waiting for a RAW frame (spec §3.1/§3.2). */
+            const int n = (cfg.n_streams > OEC_MAX_STREAMS) ? OEC_MAX_STREAMS : cfg.n_streams;
+            const size_t payload =
+                sizeof(oec_sync_head_t) + (size_t)n * sizeof(oec_stream_meta_t);
+            const size_t need = sizeof(oec_frame_header_t) + payload;
+
             uint32_t cap = 0;
             uint8_t* slot = t.acquireDataSlot(&cap, /*dropOldest=*/false);
             if (!slot) continue;   /* data ring momentarily full; skip this tick */
-            oec_sync_body sb{ e.qpc_freq_hz, e.fpga_sample_rate_hz };
-            const size_t need = sizeof(oec_frame_header_t) + sizeof(sb);
             if (cap < need) continue;
+
             auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
-            oec_frame_init(h, OEC_STREAM_SYNC, (uint32_t)sizeof(sb),
+            oec_frame_init(h, OEC_STREAM_SYNC, (uint32_t)payload,
                            e.sample_index, e.host_qpc_ticks, t.consumePendingFlags());
-            std::memcpy(slot + sizeof(*h), &sb, sizeof(sb));
+
+            oec_sync_head_t head{ e.qpc_freq_hz, e.fpga_sample_rate_hz };
+            std::memcpy(slot + sizeof(*h), &head, sizeof(head));
+            if (n > 0) {
+                std::memcpy(slot + sizeof(*h) + sizeof(head), cfg.streams,
+                            (size_t)n * sizeof(oec_stream_meta_t));
+            }
             t.publishData((uint32_t)need);
             continue;
         }
@@ -327,8 +335,7 @@ void writeSpikeFrame(ITransport& t,
     t.publishData((uint32_t)need);
 }
 
-void processBlock(
-    const int16_t* input,
+void processControl(
     uint64_t sample_index,
     const ProcessorConfig& cfg,
     ITransport& transport,
@@ -342,15 +349,26 @@ void processBlock(
     }
 
     drainCmdRing(transport, board, cfg, sample_index, pulses);
-    drainAckOutbox(transport, outbox);
+    drainAckOutbox(transport, outbox, cfg);
+}
 
-    /* One incoming buffer, one outgoing frame, stamped with whichever stream id
-     * the user labelled this node with. Publishing the same bytes twice under two
-     * stream ids would have mislabelled filtered data as RAW_BLOCK. */
-    if (cfg.enable_continuous) {
-        writeRawBlock(transport, cfg, input, sample_index,
-                      cfg.continuous_stream_id, /*flags=*/0);
-    }
+void processBlock(
+    const int16_t* input,
+    uint64_t sample_index,
+    const ProcessorConfig& cfg,
+    ITransport& transport,
+    IBoardAdapter& board,
+    AckOutbox& outbox,
+    PulseScheduler* pulses)
+{
+    processControl(sample_index, cfg, transport, board, outbox, pulses);
+
+    /* Single-stream convenience path: publish this node's one buffer, stamped with
+     * whichever stream id it is labelled with. The JUCE processor does not use this
+     * -- it publishes one block per DataStream via writeContinuousBlock(). */
+    writeContinuousBlock(transport, cfg, input,
+                         (uint16_t)cfg.num_channels, (uint16_t)cfg.block_size,
+                         sample_index, cfg.source_id);
 }
 
 }  // namespace oec::plugin

@@ -93,12 +93,12 @@ cmake -S libshared/oeconnect -B libshared/oeconnect/build -DOEC_BUILD_TESTS=ON
 cmake --build libshared/oeconnect/build --config Release
 ctest --test-dir libshared/oeconnect/build -C Release --output-on-failure
 
-# Plugin (25 tests)
+# Plugin (27 tests)
 cmake -S plugin-openephys/OEconnect -B plugin-openephys/OEconnect/build -DOEC_PLUGIN_BUILD_TESTS=ON
 cmake --build plugin-openephys/OEconnect/build --config Release
 ctest --test-dir plugin-openephys/OEconnect/build -C Release --output-on-failure
 
-# Bonsai package (33 tests, incl. an end-to-end shared-memory round trip)
+# Bonsai package (36 tests, incl. an end-to-end shared-memory round trip)
 dotnet test package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests -c Release
 ```
 

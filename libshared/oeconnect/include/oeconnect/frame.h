@@ -79,6 +79,30 @@ OEC_STATIC_ASSERT(sizeof(oec_block_subheader_t) == 8,
 #define OEC_ACK_TIMEOUT       6u
 #define OEC_ACK_INTERNAL      7u
 
+/* ---- SYNC payload (spec §3.1) ----
+ * Fixed head, then one oec_stream_meta_t per active stream. The count is derived
+ * from payload_len: n = (payload_len - sizeof(oec_sync_head_t)) / sizeof(oec_stream_meta_t).
+ * A consumer that only knows the head reads it and ignores the rest, so adding the
+ * triples is forward-compatible. */
+#pragma pack(push, 1)
+typedef struct oec_sync_head {
+    uint64_t qpc_freq_hz;
+    double   fpga_sample_rate_hz;   /* rate of source_id 0; per-stream rates below */
+} oec_sync_head_t;
+
+typedef struct oec_stream_meta {
+    uint8_t  source_id;             /* matches block_subheader.source_id */
+    uint16_t n_channels;
+    double   sample_rate_hz;
+} oec_stream_meta_t;
+#pragma pack(pop)
+
+OEC_STATIC_ASSERT(sizeof(oec_sync_head_t) == 16, "sync head must be 16 bytes packed");
+OEC_STATIC_ASSERT(sizeof(oec_stream_meta_t) == 11, "stream meta must be 11 bytes packed");
+
+/* Bound on streams advertised in one SYNC frame; keeps the producer allocation-free. */
+#define OEC_MAX_STREAMS 16
+
 /* ---- ERROR frame codes: the `code_u16` leading an OEC_STREAM_ERROR payload ----
  * The spec names PROTOCOL_VERSION_MISMATCH and FRAME_TOO_LARGE but never assigned
  * them values. Additive and forward-compatible: a receiver must treat an
