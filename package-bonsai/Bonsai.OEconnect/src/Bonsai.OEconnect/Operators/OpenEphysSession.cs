@@ -28,6 +28,8 @@ public class OpenEphysSession : SessionSource<SessionStatus>
                     BoardName = "-",
                     FrameCount = Interlocked.Read(ref session.FrameCount),
                     DropCount  = Interlocked.Read(ref session.DropCount),
+                    InvalidFrameCount = Interlocked.Read(ref session.InvalidFrameCount),
+                    DriftResetCount   = Interlocked.Read(ref session.DriftResetCount),
                     EstimatedLagMs = 0.0
                 }));
     }

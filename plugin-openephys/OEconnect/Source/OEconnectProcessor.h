@@ -51,8 +51,10 @@ struct ProcessorConfig {
         on_ttl_emit;
 
     /** Forward slow commands (START/STOP record/acq) to a worker thread.
-     *  Wait-free push; worker emits ACK(COMPLETED) via the AckOutbox. */
-    std::function<void(SlowCmdRequest)> slow_enqueue;
+     *  Wait-free push; worker emits ACK(COMPLETED) via the AckOutbox.
+     *  Returns false when a slow command is already in flight, so the caller
+     *  answers ACK(BUSY) rather than stacking commands (spec §5.5). */
+    std::function<bool(SlowCmdRequest)> slow_enqueue;
 };
 
 /**

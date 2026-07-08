@@ -14,6 +14,10 @@ internal sealed class ShmemClient : ITransportClient
     private IntPtr _ackRing  = IntPtr.Zero;
     private IntPtr _regionHeader = IntPtr.Zero;
     private string _endpoint = string.Empty;
+    private readonly object _cmdLock = new();
+
+    /// <summary>Never raised: a mapped region has no connection to lose.</summary>
+    public event EventHandler<string>? ConnectionLost { add { } remove { } }
 
     public string Name => "SharedMem";
     public bool IsConnected => _shm != IntPtr.Zero;
@@ -80,15 +84,24 @@ internal sealed class ShmemClient : ITransportClient
     public bool PostCmd(ReadOnlySpan<byte> frameBytes)
     {
         if (_cmdRing == IntPtr.Zero) return false;
-        var slot = NativeMethods.RingbufAcquire(_cmdRing, 0, out uint cap);
-        if (slot == IntPtr.Zero || cap < frameBytes.Length) return false;
-        unsafe
+
+        /* The cmd ring is single-producer, but several operators (SetTtl,
+         * StartRecording, ...) share one Session and post from different Rx
+         * threads. Without this lock two threads acquire the same slot and both
+         * publish, corrupting the ring. Spec §5.5: one command in flight at a
+         * time per Bonsai instance. */
+        lock (_cmdLock)
         {
-            var dst = new Span<byte>(slot.ToPointer(), (int)cap);
-            frameBytes.CopyTo(dst);
+            var slot = NativeMethods.RingbufAcquire(_cmdRing, 0, out uint cap);
+            if (slot == IntPtr.Zero || cap < frameBytes.Length) return false;
+            unsafe
+            {
+                var dst = new Span<byte>(slot.ToPointer(), (int)cap);
+                frameBytes.CopyTo(dst);
+            }
+            NativeMethods.RingbufPublish(_cmdRing);
+            return true;
         }
-        NativeMethods.RingbufPublish(_cmdRing);
-        return true;
     }
 
     public void Dispose() => Stop();

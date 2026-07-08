@@ -19,12 +19,21 @@ void SlowCmdWorker::stop() {
     }
 }
 
-void SlowCmdWorker::enqueue(SlowCmdRequest req) {
+bool SlowCmdWorker::tryEnqueue(SlowCmdRequest req) {
+    /* Claim the single in-flight slot. CAS so two audio-thread calls (or a retry
+     * racing the worker's completion) cannot both win. */
+    int expected = 0;
+    if (!in_flight_.compare_exchange_strong(expected, 1,
+                                            std::memory_order_acq_rel,
+                                            std::memory_order_acquire)) {
+        return false;   // caller answers ACK(BUSY)
+    }
     {
         std::lock_guard<std::mutex> lk(mu_);
         q_.push_back(std::move(req));
     }
     cv_.notify_one();
+    return true;
 }
 
 void SlowCmdWorker::loop() {
@@ -35,7 +44,12 @@ void SlowCmdWorker::loop() {
             cv_.wait(lk, [this] {
                 return !q_.empty() || !running_.load(std::memory_order_acquire);
             });
-            if (!running_.load(std::memory_order_acquire)) return;
+            if (!running_.load(std::memory_order_acquire)) {
+                /* Shutting down with a command still claimed: release the slot so
+                 * a restarted worker is not permanently BUSY. */
+                in_flight_.store(0, std::memory_order_release);
+                return;
+            }
             req = std::move(q_.front());
             q_.pop_front();
         }
@@ -44,7 +58,11 @@ void SlowCmdWorker::loop() {
         e.cookie = req.cookie;
         e.status = status;
         outbox_.tryPush(e);
+
+        /* Free the slot only now: the command is done, not merely dequeued. */
+        in_flight_.store(0, std::memory_order_release);
     }
+    in_flight_.store(0, std::memory_order_release);
 }
 
 }  // namespace oec::plugin

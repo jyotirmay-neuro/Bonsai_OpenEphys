@@ -48,6 +48,10 @@ public sealed class Session : IDisposable
 
     private bool _versionMismatchRaised;
     private bool _badMagicLogged;
+    private bool _connectionLostRaised;
+
+    /// <summary>Times the drift window was reset for divergence (spec §2.5).</summary>
+    public long DriftResetCount;
 
     /* HELLO negotiation state (spec v1.1 §8). */
     public ushort RemoteMajor;
@@ -62,6 +66,17 @@ public sealed class Session : IDisposable
     {
         Transport = transport;
         Endpoint = endpoint;
+        /* Spec §5.6: a control-channel disconnect must reach the workflow. */
+        Transport.ConnectionLost += OnTransportConnectionLost;
+    }
+
+    private void OnTransportConnectionLost(object? sender, string reason)
+    {
+        if (_connectionLostRaised) return;
+        _connectionLostRaised = true;
+        RawSubject.OnError(new OpenEphysConnectionException(
+            Transport.Name, Endpoint, Interlocked.Read(ref DropCount),
+            $"OEconnect transport lost: {reason}"));
     }
 
     public void AddRef() => Interlocked.Increment(ref _refCount);
@@ -194,7 +209,10 @@ public sealed class Session : IDisposable
         {
             NativeMethods.DriftAdd(_drift, h.SampleIndex, h.HostQpcTicks);
             if (++_driftPoints >= 2)
+            {
                 NativeMethods.DriftFit(_drift, out _, out _);
+                CheckDriftDivergence(freq);
+            }
 
             lock (_clockLock)
             {
@@ -379,6 +397,33 @@ public sealed class Session : IDisposable
         });
     }
 
+    /// <summary>Residual RMS above which the clock fit is considered diverged (spec §2.5).</summary>
+    private const double DriftDivergenceThresholdMicros = 5.0;
+
+    /// <summary>
+    /// Spec §2.5: a residual RMS over 5 µs means the fit no longer describes the
+    /// data — typically a USB hiccup shifted the sample/clock relationship. Reset
+    /// the window so the next points build a fresh fit, and count it. Deliberately
+    /// NOT an OnError: drift glitches are expected during normal operation.
+    /// </summary>
+    private void CheckDriftDivergence(ulong qpcFreq)
+    {
+        if (qpcFreq == 0) return;   // cannot convert ticks to microseconds yet
+
+        double residualTicks = NativeMethods.DriftResidualRms(_drift);
+        if (residualTicks < 0) return;   // no fit yet
+
+        double residualMicros = residualTicks * 1_000_000.0 / qpcFreq;
+        if (residualMicros <= DriftDivergenceThresholdMicros) return;
+
+        NativeMethods.DriftReset(_drift);
+        _driftPoints = 0;
+        Interlocked.Increment(ref DriftResetCount);
+        Trace.WriteLine(
+            $"[OEconnect] drift fit diverged (residual {residualMicros:F1} us > " +
+            $"{DriftDivergenceThresholdMicros} us); window reset");
+    }
+
     public ulong PredictQpc(ulong sampleIndex)
         => NativeMethods.DriftPredictQpc(_drift, sampleIndex);
 
@@ -406,6 +451,7 @@ public sealed class Session : IDisposable
     {
         _cts?.Cancel();
         _reader?.Join(500);
+        Transport.ConnectionLost -= OnTransportConnectionLost;
         foreach (var kv in _pendingAcks) kv.Value.TrySetCanceled();
         _pendingAcks.Clear();
         Transport.Dispose();

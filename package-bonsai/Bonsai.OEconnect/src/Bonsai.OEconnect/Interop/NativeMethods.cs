@@ -87,6 +87,13 @@ internal static class NativeMethods
     [DllImport(Lib, EntryPoint = "oec_drift_predict_qpc", CallingConvention = CallingConvention.Cdecl)]
     public static extern ulong DriftPredictQpc(IntPtr fit, ulong sampleIndex);
 
+    /// <summary>Residual RMS of the current fit, in QPC ticks; -1 if unfitted.</summary>
+    [DllImport(Lib, EntryPoint = "oec_drift_residual_rms", CallingConvention = CallingConvention.Cdecl)]
+    public static extern double DriftResidualRms(IntPtr fit);
+
+    [DllImport(Lib, EntryPoint = "oec_drift_reset", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void DriftReset(IntPtr fit);
+
     /* --- sidecar --- */
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct OecSidecar

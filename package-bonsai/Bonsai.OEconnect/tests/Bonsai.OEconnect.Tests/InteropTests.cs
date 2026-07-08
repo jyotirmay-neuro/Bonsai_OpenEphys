@@ -85,4 +85,47 @@ public class InteropTests
         }
         finally { NativeMethods.DriftDestroy(f); }
     }
+
+    /// <summary>
+    /// Spec §2.5: divergence is detected via residual RMS — ~0 for a perfect line,
+    /// large once a clock step breaks the sample↔clock relationship.
+    /// </summary>
+    [Fact]
+    public void DriftResidualRms_IsZeroForPerfectLineAndLargeAfterAJump()
+    {
+        var f = NativeMethods.DriftCreate();
+        try
+        {
+            for (ulong s = 0; s < 50; ++s) NativeMethods.DriftAdd(f, s, 100 + 33 * s);
+            Assert.Equal(OecStatus.Ok, NativeMethods.DriftFit(f, out _, out _));
+            Assert.InRange(NativeMethods.DriftResidualRms(f), 0.0, 1e-6);
+
+            for (ulong s = 50; s < 60; ++s) NativeMethods.DriftAdd(f, s, 100 + 33 * s + 100_000);
+            Assert.Equal(OecStatus.Ok, NativeMethods.DriftFit(f, out _, out _));
+            Assert.True(NativeMethods.DriftResidualRms(f) > 1000.0,
+                "a large clock step must show up as a large residual");
+        }
+        finally { NativeMethods.DriftDestroy(f); }
+    }
+
+    /// <summary>Reset clears the fit, so predictions fall back to 0 until refit.</summary>
+    [Fact]
+    public void DriftReset_ClearsTheFit()
+    {
+        var f = NativeMethods.DriftCreate();
+        try
+        {
+            for (ulong s = 0; s < 50; ++s) NativeMethods.DriftAdd(f, s, 100 + 33 * s);
+            Assert.Equal(OecStatus.Ok, NativeMethods.DriftFit(f, out _, out _));
+            Assert.NotEqual(0ul, NativeMethods.DriftPredictQpc(f, 10));
+            Assert.True(NativeMethods.DriftResidualRms(f) >= 0.0);
+
+            NativeMethods.DriftReset(f);
+
+            Assert.Equal(0ul, NativeMethods.DriftPredictQpc(f, 10));
+            Assert.Equal(-1.0, NativeMethods.DriftResidualRms(f));
+            Assert.Equal(OecStatus.EParse, NativeMethods.DriftFit(f, out _, out _));
+        }
+        finally { NativeMethods.DriftDestroy(f); }
+    }
 }

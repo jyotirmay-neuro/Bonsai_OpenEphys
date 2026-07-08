@@ -12,6 +12,7 @@
 #include "OEconnectProcessor.h"
 #include "Transport/ShmemTransport.h"
 #include "Boards/FileReaderAdapter.h"
+#include "Util/SlowCmdWorker.h"   /* full SlowCmdRequest; the processor only fwd-declares it */
 
 extern "C" {
 #include "oeconnect/ringbuf.h"
@@ -433,6 +434,70 @@ SetTtlBody makeSetTtl(uint8_t line, uint8_t edge) {
     return b;
 }
 }  // namespace
+
+/* Spec §5.5: one slow command in flight at a time; the loser gets ACK(BUSY)
+ * rather than being silently queued behind the first. */
+TEST(HotPath, SecondSlowCommandWhileOneInFlightGetsBusy) {
+    ShmemTransport t;
+    std::string name = uniq() + ".busy";
+    ASSERT_TRUE(t.start(name));
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+
+    /* Two STOP_RECORD commands (no args) back to back. */
+    for (uint32_t cookie : { 0x11u, 0x22u }) {
+        oec_frame_header_t hdr;
+        oec_frame_init(&hdr, OEC_STREAM_CMD, 6, 0, 0, 0);
+        uint8_t body[6] = {};
+        const uint16_t cid = OEC_CMD_STOP_RECORD;
+        std::memcpy(body + 0, &cid, 2);
+        std::memcpy(body + 2, &cookie, 4);
+        injectCmdFrame(mapped, hdr, body, sizeof(body));
+    }
+
+    /* Stand in for SlowCmdWorker: accept exactly one, then report busy. */
+    int accepted = 0;
+    ProcessorConfig cfg;
+    cfg.num_channels = 1; cfg.block_size = 1;
+    cfg.enable_continuous = false;
+    cfg.enable_spikes = cfg.enable_ttl = false;
+    cfg.slow_enqueue = [&](SlowCmdRequest) { return accepted++ == 0; };
+
+    FileReaderAdapter board("ttl_out_log.csv");
+    AckOutbox outbox(64);
+    std::vector<int16_t> dummy(1, 0);
+    processBlock(dummy.data(), 0, cfg, t, board, outbox);
+
+    EXPECT_EQ(accepted, 2) << "both commands must be offered to the worker";
+
+    /* Ack ring: PENDING for the first, BUSY for the second. */
+    oec_ringbuf_t* ack = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_ACK, &ack), OEC_OK);
+    uint32_t sz = 0;
+
+    const void* a0 = oec_ringbuf_peek(ack, &sz);
+    ASSERT_NE(a0, nullptr);
+    uint32_t c0 = 0; uint16_t s0 = 0;
+    std::memcpy(&c0, (const uint8_t*)a0 + sizeof(oec_frame_header_t) + 0, 4);
+    std::memcpy(&s0, (const uint8_t*)a0 + sizeof(oec_frame_header_t) + 4, 2);
+    EXPECT_EQ(c0, 0x11u);
+    EXPECT_EQ(s0, OEC_ACK_PENDING);
+    oec_ringbuf_consume(ack);
+
+    const void* a1 = oec_ringbuf_peek(ack, &sz);
+    ASSERT_NE(a1, nullptr);
+    uint32_t c1 = 0; uint16_t s1 = 0;
+    std::memcpy(&c1, (const uint8_t*)a1 + sizeof(oec_frame_header_t) + 0, 4);
+    std::memcpy(&s1, (const uint8_t*)a1 + sizeof(oec_frame_header_t) + 4, 2);
+    EXPECT_EQ(c1, 0x22u);
+    EXPECT_EQ(s1, OEC_ACK_BUSY) << "second slow command must be refused with BUSY";
+    oec_ringbuf_detach(ack);
+
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
 
 /* Spec §2.6 / §8.4: a command frame that fails validation must be refused, not
  * executed. Previously oec_frame_validate() was never called on either side. */

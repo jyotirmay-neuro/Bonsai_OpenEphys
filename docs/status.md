@@ -47,10 +47,10 @@ Last verified: 2026-07-08.
 | `SetTtl` / `PulseTtl` → TTL event | Working | Published on OE's event bus via `addTTLChannel()` + `setTTLState()`. Board-agnostic. |
 | TTL echo into the OE recording | Working | The same event is captured by any downstream Record Node, satisfying the "complete record" guarantee in [architecture-rules.md](architecture-rules.md). |
 | `SetTtl` / `PulseTtl` → physical line | Working, **requires a downstream output plugin** | The GUI has no cross-board API for driving a digital output directly (`setTTLOutputBit` does not exist). Place **Acq Board Output**, **Arduino Output**, or **Pulse Pal** downstream of OEconnect; it converts the event into a line. This is the same mechanism Crossing Detector and Ripple Detector use. |
-| Concurrent commands → `ACK(BUSY)` (§5.5) | **Missing** | Commands are not serialised per-sender; `BUSY` is never emitted. |
-| Drift divergence reset (§2.5) | **Missing** | Residual RMS > 5 us should reset the window and bump a telemetry counter; `oec_drift_residual_rms()` is never consulted. |
+| Concurrent commands → `ACK(BUSY)` (§5.5) | Working | The plugin admits one slow command (record/acq) at a time; a second arriving mid-flight gets `ACK(BUSY)` rather than being queued behind the first. The slot is held until the dispatcher *returns*, not merely until dequeue. Bonsai serialises `PostCmd` under a lock — the cmd ring is single-producer and NetMQ sockets are not thread-safe, yet several operators post from different Rx threads. |
+| Drift divergence reset (§2.5) | Working | After each fit the residual RMS is converted to microseconds using the SYNC-reported clock frequency; above 5 µs the window is reset and `SessionStatus.DriftResetCount` increments. Deliberately not an `OnError` — drift glitches are expected. |
 | ZMQ CURVE, both ends (§5.7) | Working | Plugin refuses an unauthenticated non-loopback bind; `ZmqClient` mirrors it, requiring `OEC_ZMQ_CURVE_SERVER_PUBLIC` for any non-loopback endpoint and failing closed otherwise. Client keypair from `OEC_ZMQ_CURVE_SECRET`, else ephemeral. |
-| ZMQ `RCVHWM`, REQ heartbeat, disconnect `OnError` (§5.4/§5.6) | **Missing** | Not set on the Bonsai socket. |
+| ZMQ `RCVHWM`, REQ heartbeat, disconnect `OnError` (§5.4/§5.6) | Working | SUB sets `ReceiveHighWatermark = 4096`; REQ sets a 500 ms heartbeat with a 2 s timeout. A `NetMQMonitor` disconnect, or an unanswered command, raises `ConnectionLost`, which the Session turns into `OnError` on the sources — once, so a flapping peer cannot spam it. |
 | Multi-`DataStream` sources | **Partial** | `process()` flattens every channel of every DataStream into one block using `buffer.getNumSamples()`. A source with several streams at different rates (e.g. Neuropixels AP + LFP) is mis-shaped. Should emit one block per stream, keyed by `source_id`. |
 | Direct board trigger | Working, opt-in | With the *Direct board trigger* parameter on, a **pulse** additionally broadcasts `ACQBOARD TRIGGER <line> <ms>`, so the acquisition board fires it without waiting on the downstream output plugin. Pulses only — the grammar cannot latch a line, so `SetTtl` always goes via the event bus. Boards that don't implement `handleBroadcastMessage()` ignore it. |
 
@@ -109,8 +109,8 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 | Suite | Count | Covers |
 |---|---|---|
 | `libshared` (C) | 35 | Ring buffer SPSC + eviction accounting, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
-| Plugin (C++) | 20 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming, command frame validation (bad magic / wrong major refused + ERROR reported) |
-| Bonsai (C#) | 30 | Interop, HELLO negotiation matrix, command builder, CURVE client policy, frame validation (bad magic dropped, major mismatch fatal, minor forward-compatible), ERROR frame parsing, end-to-end shared-memory round trip |
+| Plugin (C++) | 23 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming, command frame validation, slow-command BUSY gating (incl. slot held until the dispatcher returns) |
+| Bonsai (C#) | 32 | Interop, HELLO negotiation matrix, command builder, CURVE client policy, frame validation, ERROR frame parsing, drift residual/reset semantics, end-to-end shared-memory round trip |
 
 The end-to-end round trip drives a real synthetic producer over shared memory and
 asserts that `RawSamples` delivers blocks, so the data path is covered from the

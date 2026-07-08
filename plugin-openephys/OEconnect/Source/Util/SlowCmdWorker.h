@@ -29,7 +29,20 @@ public:
 
     void start();
     void stop();
-    void enqueue(SlowCmdRequest req);
+
+    /**
+     * Accept a slow command only if none is already queued or executing
+     * (spec §5.5: one command in flight at a time; the loser gets ACK(BUSY)).
+     * Returns false when busy, so the caller can answer BUSY instead of silently
+     * stacking recordings behind each other.
+     *
+     * Called from the audio thread: takes the queue mutex only to push, and the
+     * queue is sparse (start/stop record, start/stop acq).
+     */
+    bool tryEnqueue(SlowCmdRequest req);
+
+    /** True while a command is queued or executing. */
+    bool busy() const { return in_flight_.load(std::memory_order_acquire) != 0; }
 
 private:
     void loop();
@@ -37,6 +50,9 @@ private:
     AckOutbox&            outbox_;
     Dispatcher            dispatcher_;
     std::atomic<bool>     running_{false};
+    /* Queued + executing. Cleared only after the dispatcher returns, so a second
+     * command issued while the first is still writing to disk gets BUSY. */
+    std::atomic<int>      in_flight_{0};
     std::thread           thread_;
     std::mutex            mu_;
     std::condition_variable cv_;

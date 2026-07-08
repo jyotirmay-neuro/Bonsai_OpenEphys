@@ -191,8 +191,17 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cf
                         break;
                     }
                 }
-                if (cfg.slow_enqueue) cfg.slow_enqueue(std::move(req));
-                emitAck(t, cookie, OEC_ACK_PENDING, 0);
+                /* Spec §5.5: one slow command in flight at a time. A second one
+                 * arriving mid-flight is refused with BUSY rather than queued --
+                 * silently stacking START_RECORD behind STOP_RECORD would produce
+                 * an ordering the caller never asked for. */
+                if (!cfg.slow_enqueue) {
+                    emitAck(t, cookie, OEC_ACK_NOT_SUPPORTED, 0);
+                } else if (cfg.slow_enqueue(std::move(req))) {
+                    emitAck(t, cookie, OEC_ACK_PENDING, 0);
+                } else {
+                    emitAck(t, cookie, OEC_ACK_BUSY, 0);
+                }
                 break;
             }
             default:

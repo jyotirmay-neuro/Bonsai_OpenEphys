@@ -11,3 +11,9 @@ Bonsai.OEconnect.Data.SessionStatus.LastErrorCode.init -> void
 Bonsai.OEconnect.Data.SessionStatus.LastErrorMessage.get -> string
 Bonsai.OEconnect.Data.SessionStatus.LastErrorMessage.init -> void
 Bonsai.OEconnect.Sessions.Session.InvalidFrameCount -> long
+Bonsai.OEconnect.Data.SessionStatus.DriftResetCount.get -> long
+Bonsai.OEconnect.Data.SessionStatus.DriftResetCount.init -> void
+Bonsai.OEconnect.Data.SessionStatus.InvalidFrameCount.get -> long
+Bonsai.OEconnect.Data.SessionStatus.InvalidFrameCount.init -> void
+Bonsai.OEconnect.Sessions.Session.DriftResetCount -> long
+Bonsai.OEconnect.Transport.ITransportClient.ConnectionLost -> System.EventHandler<string>

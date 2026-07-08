@@ -14,6 +14,12 @@ public sealed class SessionStatus
     public ushort LastErrorCode { get; init; }
     public string LastErrorMessage { get; init; } = string.Empty;
 
+    /// <summary>Frames rejected by magic/version validation (spec §2.6).</summary>
+    public long InvalidFrameCount { get; init; }
+
+    /// <summary>Times the clock fit diverged and its window was reset (spec §2.5).</summary>
+    public long DriftResetCount { get; init; }
+
     /* Remote protocol version, populated when a HELLO frame is received.
      * Falls back to v1.0 if the remote never sends HELLO within 2 s (see
      * spec/oec-protocol-v1.md §8.3). */

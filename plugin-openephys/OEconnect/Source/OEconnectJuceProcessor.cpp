@@ -342,7 +342,7 @@ bool OEconnectJuceProcessor::startAcquisition() {
             }
         });
     slow_worker_->start();
-    cfg_.slow_enqueue = [this](SlowCmdRequest r) { slow_worker_->enqueue(std::move(r)); };
+    cfg_.slow_enqueue = [this](SlowCmdRequest r) { return slow_worker_->tryEnqueue(std::move(r)); };
 
     /* Write sidecar JSON */
     oec_sidecar_t s{};
