@@ -23,13 +23,14 @@ public class StartRecording
 
     [Description(
         "Recording root directory, resolved on the OpenEphys machine - not " +
-        "Bonsai's filesystem. Leave empty to keep whatever directory the OE GUI " +
-        "is already configured with.")]
+        "Bonsai's filesystem. Applied to every Record Node in the chain. Leave " +
+        "empty to keep whatever directory the OE GUI is already configured with.")]
     public string Directory { get; set; } = string.Empty;
 
     [Description(
-        "File-name prefix for the recording. NOTE: sent over the wire but not yet " +
-        "applied by the plugin - the OE GUI's own naming settings currently win.")]
+        "Text prepended to the recording directory name. OpenEphys has no " +
+        "per-file prefix: it names recordings <prepend><base><append>, and this " +
+        "sets the prepend text. Leave empty to keep the OE GUI's naming settings.")]
     public string Prefix { get; set; } = string.Empty;
 
     public IObservable<TSource> Process<TSource>(IObservable<TSource> source)

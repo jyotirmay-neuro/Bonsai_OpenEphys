@@ -311,13 +311,22 @@ bool OEconnectJuceProcessor::startAcquisition() {
         [this](const SlowCmdRequest& req) -> uint16_t {
             switch (req.cmd_id) {
                 case OEC_CMD_START_RECORD:
-                    /* applyToAll=true ignores the nodeId and targets every
-                       Record Node in the chain. */
-                    CoreServices::RecordNode::setRecordingDirectory(
-                        juce::String(req.arg1), /*nodeId=*/0, /*applyToAll=*/true);
-                    /* TODO(impl): forward the file-name prefix (req.arg2) via
-                       CoreServices::setRecordingDirectoryPrependText / ...AppendText
-                       once the desired naming semantics are settled. */
+                    /* Empty fields mean "leave the GUI's setting alone". Passing an
+                       empty string through would clobber the configured directory. */
+                    if (!req.arg1.empty()) {
+                        /* applyToAll=true ignores the nodeId and targets every
+                           Record Node in the chain. */
+                        CoreServices::RecordNode::setRecordingDirectory(
+                            juce::String(req.arg1), /*nodeId=*/0, /*applyToAll=*/true);
+                    }
+                    if (!req.arg2.empty()) {
+                        /* OE has no per-file prefix; naming is
+                           <prepend><base><append> on the recording directory. The
+                           closest honest mapping for our "prefix" is the prepend
+                           text. Identical API on plugin API v8 and v10. */
+                        CoreServices::setRecordingDirectoryPrependText(
+                            juce::String(req.arg2));
+                    }
                     CoreServices::setRecordingStatus(true);
                     return OEC_ACK_COMPLETED;
                 case OEC_CMD_STOP_RECORD:

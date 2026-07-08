@@ -37,7 +37,7 @@ Last verified: 2026-07-08.
 | Command bounds validation | Working | Every field length-checked against the frame before use. |
 | ACK / cookie correlation | Working | Acks drained on both transports and matched by cookie. |
 | `PULSE_TTL` auto-clear scheduling | Working | Falling edge scheduled by FPGA sample index, serviced each callback. |
-| `START_RECORD` file-name prefix | **Partial** | Transmitted over the wire, but the plugin does not apply it. The OE GUI's naming settings win. |
+| `START_RECORD` directory + prefix | Working | Directory applied to every Record Node. `Prefix` maps to OE's recording-directory *prepend text* (OE has no per-file prefix). Empty fields leave the GUI's settings alone. |
 | `SetTtl` / `PulseTtl` → TTL event | Working | Published on OE's event bus via `addTTLChannel()` + `setTTLState()`. Board-agnostic. |
 | TTL echo into the OE recording | Working | The same event is captured by any downstream Record Node, satisfying the "complete record" guarantee in [architecture-rules.md](architecture-rules.md). |
 | `SetTtl` / `PulseTtl` → physical line | Working, **requires a downstream output plugin** | The GUI has no cross-board API for driving a digital output directly (`setTTLOutputBit` does not exist). Place **Acq Board Output**, **Arduino Output**, or **Pulse Pal** downstream of OEconnect; it converts the event into a line. This is the same mechanism Crossing Detector and Ripple Detector use. |
@@ -72,8 +72,15 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 2. **Pre-0.6 GUI lines (0.4.x / 0.5.x) are unsupported.** They predate
    `DataStream` and the `Parameter` class, on which this plugin is built.
    See [oe-version-compatibility.md](oe-version-compatibility.md).
-3. **Ring geometry is not editor-configurable** even though the spec says it is.
-4. **`START_RECORD` prefix is ignored** by the plugin.
+3. **Ring geometry is not editor-configurable** even though the spec says it is,
+   and an oversized block is dropped *silently*. A slot is 64 KiB, so a block of
+   `n_channels x n_samples x 2 B + 40 B` larger than that is never published and
+   nothing is counted. At the default 32-sample block that caps you at 1023
+   channels; a source with larger blocks (e.g. Neuropixels) can exceed it outright.
+4. **Two OEconnect nodes in one GUI process collide.** The shared-memory region is
+   named `oeconnect.<pid>.shm`, so a second node attaches to the first's rings and
+   both become producers on an SPSC ring. Needed if you want raw *and* filtered
+   streams from one chain.
 
 ### Resolved
 
