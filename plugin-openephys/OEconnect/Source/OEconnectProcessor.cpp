@@ -112,6 +112,23 @@ void drainCmdRing(ITransport& t, IBoardAdapter& board, const ProcessorConfig& cf
         if (sz < kHdr + 6) { t.consumeCmd(); continue; }
 
         const auto* h = reinterpret_cast<const oec_frame_header_t*>(frame);
+
+        /* Spec §2.6 / §8.4: check magic and version_major before trusting any
+         * field. A wrong major means the sender's frame layout may differ, so the
+         * body cannot even be parsed to recover a cookie for an ACK -- report via
+         * an ERROR frame and refuse the command. */
+        const oec_status_t v = oec_frame_validate(h);
+        if (v != OEC_OK) {
+            if (v == OEC_E_VERSION_MISMATCH) {
+                writeErrorFrame(t, OEC_ERR_PROTOCOL_VERSION_MISMATCH,
+                                "CMD frame protocol major mismatch; command refused");
+            } else {
+                writeErrorFrame(t, OEC_ERR_BAD_MAGIC, "CMD frame failed magic check");
+            }
+            t.consumeCmd();
+            continue;
+        }
+
         if (h->stream_id != OEC_STREAM_CMD) { t.consumeCmd(); continue; }
 
         const uint8_t* body = frame + kHdr;
@@ -230,6 +247,28 @@ void drainAckOutbox(ITransport& t, AckOutbox& outbox)
 }
 
 }  // namespace
+
+/* Publish one ERROR frame (spec §3.1: {code_u16, utf8_len_u16, utf8_msg[]}).
+ * Best-effort: if the data ring cannot take it, the error is simply not reported. */
+void writeErrorFrame(ITransport& t, uint16_t code, const char* msg)
+{
+    const uint16_t textlen = (uint16_t)std::strlen(msg);
+    const size_t payload = sizeof(code) + sizeof(textlen) + textlen;
+    const size_t need = sizeof(oec_frame_header_t) + payload;
+
+    uint32_t cap = 0;
+    uint8_t* slot = t.acquireDataSlot(&cap, /*dropOldest=*/false);
+    if (!slot || cap < need) return;
+
+    auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
+    oec_frame_init(h, OEC_STREAM_ERROR, (uint32_t)payload, 0, qpc_now(),
+                   t.consumePendingFlags());
+    uint8_t* body = slot + sizeof(*h);
+    std::memcpy(body + 0, &code, sizeof(code));
+    std::memcpy(body + 2, &textlen, sizeof(textlen));
+    std::memcpy(body + 4, msg, textlen);
+    t.publishData((uint32_t)need);
+}
 
 void writeTtlEventFrame(ITransport& t,
                         uint8_t line, uint8_t edge, uint8_t board_id,

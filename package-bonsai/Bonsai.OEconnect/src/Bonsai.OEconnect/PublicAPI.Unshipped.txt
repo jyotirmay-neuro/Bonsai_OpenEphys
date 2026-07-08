@@ -1,0 +1,13 @@
+Bonsai.OEconnect.Interop.OecErrors
+Bonsai.OEconnect.Interop.OecProtocol
+const Bonsai.OEconnect.Interop.OecErrors.BadMagic = 3 -> ushort
+const Bonsai.OEconnect.Interop.OecErrors.FrameTooLarge = 2 -> ushort
+const Bonsai.OEconnect.Interop.OecErrors.ProtocolVersionMismatch = 1 -> ushort
+const Bonsai.OEconnect.Interop.OecErrors.UnsupportedBoardSdk = 4 -> ushort
+const Bonsai.OEconnect.Interop.OecProtocol.VersionMajor = 1 -> byte
+const Bonsai.OEconnect.Interop.OecProtocol.VersionMinor = 1 -> byte
+Bonsai.OEconnect.Data.SessionStatus.LastErrorCode.get -> ushort
+Bonsai.OEconnect.Data.SessionStatus.LastErrorCode.init -> void
+Bonsai.OEconnect.Data.SessionStatus.LastErrorMessage.get -> string
+Bonsai.OEconnect.Data.SessionStatus.LastErrorMessage.init -> void
+Bonsai.OEconnect.Sessions.Session.InvalidFrameCount -> long

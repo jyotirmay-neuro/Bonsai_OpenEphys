@@ -262,24 +262,12 @@ bool OEconnectJuceProcessor::startAcquisition() {
             "Upgrade the board firmware/SDK, or run in observation-only mode "
             "(remove this signal chain's TTL outputs and slow-cmd sinks).");
 
-        /* Also emit one OEC_STREAM_ERROR frame so Bonsai sees the reason.
-         * Body: [uint16 code][utf8 text...] (no trailing NUL). */
+        /* Also emit one OEC_STREAM_ERROR frame so Bonsai sees the reason. The
+         * previous hand-rolled version omitted the utf8_len_u16 field that spec
+         * §3.1 requires, so consumers could not find the message boundary. */
         if (transport_) {
-            uint32_t dcap = 0;
-            if (uint8_t* dslot = transport_->acquireDataSlot(&dcap, /*dropOldest=*/false)) {
-                const char*    msg     = board_->sdkVersionString();
-                const uint16_t code    = OEC_ACK_NOT_SUPPORTED;
-                const size_t   textlen = std::strlen(msg);
-                const size_t   payload = sizeof(code) + textlen;
-                if (dcap >= sizeof(oec_frame_header_t) + payload) {
-                    oec_frame_header_t h;
-                    oec_frame_init(&h, OEC_STREAM_ERROR, (uint32_t)payload, 0, 0, 0);
-                    std::memcpy(dslot, &h, sizeof(h));
-                    std::memcpy(dslot + sizeof(h), &code, sizeof(code));
-                    std::memcpy(dslot + sizeof(h) + sizeof(code), msg, textlen);
-                    transport_->publishData((uint32_t)(sizeof(h) + payload));
-                }
-            }
+            writeErrorFrame(*transport_, OEC_ERR_UNSUPPORTED_BOARD_SDK,
+                            board_->sdkVersionString());
         }
         return false;
     }

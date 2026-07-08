@@ -79,6 +79,15 @@ OEC_STATIC_ASSERT(sizeof(oec_block_subheader_t) == 8,
 #define OEC_ACK_TIMEOUT       6u
 #define OEC_ACK_INTERNAL      7u
 
+/* ---- ERROR frame codes: the `code_u16` leading an OEC_STREAM_ERROR payload ----
+ * The spec names PROTOCOL_VERSION_MISMATCH and FRAME_TOO_LARGE but never assigned
+ * them values. Additive and forward-compatible: a receiver must treat an
+ * unrecognised code as opaque rather than fail. */
+#define OEC_ERR_PROTOCOL_VERSION_MISMATCH 1u
+#define OEC_ERR_FRAME_TOO_LARGE           2u
+#define OEC_ERR_BAD_MAGIC                 3u
+#define OEC_ERR_UNSUPPORTED_BOARD_SDK     4u
+
 /* ---- Helpers ---- */
 
 /* Fill a header with magic, version, supplied stream_id/payload_len/sample/qpc/flags.

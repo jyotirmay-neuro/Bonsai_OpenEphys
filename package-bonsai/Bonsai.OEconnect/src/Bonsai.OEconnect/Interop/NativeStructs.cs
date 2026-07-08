@@ -41,6 +41,22 @@ public enum OecStatus
     ENotImplemented     = -10
 }
 
+/// <summary>Mirrors OEC_PROTOCOL_VERSION_* in libshared's version.h.</summary>
+public static class OecProtocol
+{
+    public const byte VersionMajor = 1;
+    public const byte VersionMinor = 1;
+}
+
+/// <summary>ERROR frame codes; mirrors OEC_ERR_* in libshared's frame.h.</summary>
+public static class OecErrors
+{
+    public const ushort ProtocolVersionMismatch = 1;
+    public const ushort FrameTooLarge           = 2;
+    public const ushort BadMagic                = 3;
+    public const ushort UnsupportedBoardSdk     = 4;
+}
+
 public static class OecStreams
 {
     public const ushort RawBlock      = 0x0001;

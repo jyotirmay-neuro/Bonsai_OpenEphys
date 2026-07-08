@@ -404,6 +404,127 @@ TEST(HotPath, SpikeFrameCarriesWaveformAndMetadata) {
     oec_shm_unlink(name.c_str());
 }
 
+namespace {
+/* Writes a CMD frame into the cmd ring with a caller-chosen header, so we can
+ * inject frames the producer would never emit. */
+void injectCmdFrame(void* mapped, const oec_frame_header_t& hdr,
+                    const void* body, size_t body_len) {
+    oec_ringbuf_t* w = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_CMD, &w), OEC_OK);
+    uint32_t cap = 0;
+    void* slot = oec_ringbuf_acquire(w, 0, &cap);
+    ASSERT_NE(slot, nullptr);
+    std::memcpy(slot, &hdr, sizeof(hdr));
+    std::memcpy((uint8_t*)slot + sizeof(hdr), body, body_len);
+    oec_ringbuf_publish(w);
+    oec_ringbuf_detach(w);
+}
+
+/* [cmd_id:2][cookie:4][line:1][edge:1] */
+struct SetTtlBody { uint8_t bytes[8]; };
+SetTtlBody makeSetTtl(uint8_t line, uint8_t edge) {
+    SetTtlBody b{};
+    const uint16_t cid = OEC_CMD_SET_TTL;
+    const uint32_t ck  = 0x777u;
+    std::memcpy(b.bytes + 0, &cid, 2);
+    std::memcpy(b.bytes + 2, &ck, 4);
+    b.bytes[6] = line;
+    b.bytes[7] = edge;
+    return b;
+}
+}  // namespace
+
+/* Spec §2.6 / §8.4: a command frame that fails validation must be refused, not
+ * executed. Previously oec_frame_validate() was never called on either side. */
+TEST(HotPath, CmdWithBadMagicIsRefusedAndReportedAsError) {
+    ShmemTransport t;
+    std::string name = uniq() + ".badmagic";
+    ASSERT_TRUE(t.start(name));
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+
+    oec_frame_header_t hdr;
+    oec_frame_init(&hdr, OEC_STREAM_CMD, 8, 0, 0, 0);
+    hdr.magic = 0xDEADBEEFu;                       /* corrupt */
+    auto body = makeSetTtl(/*line=*/5, /*edge=*/1);
+    injectCmdFrame(mapped, hdr, body.bytes, sizeof(body.bytes));
+
+    int callback_hits = 0;
+    ProcessorConfig cfg;
+    cfg.num_channels = 1; cfg.block_size = 1;
+    cfg.enable_continuous = false;
+    cfg.enable_spikes = cfg.enable_ttl = false;
+    cfg.on_ttl_emit = [&](uint8_t, uint8_t, uint64_t) { ++callback_hits; };
+
+    FileReaderAdapter board("ttl_out_log.csv");
+    AckOutbox outbox(64);
+    std::vector<int16_t> dummy(1, 0);
+    processBlock(dummy.data(), 0, cfg, t, board, outbox);
+
+    EXPECT_EQ(callback_hits, 0) << "a frame failing the magic check must not drive TTL";
+
+    /* An ERROR frame explains why. */
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+    uint32_t sz = 0;
+    const void* f = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(f, nullptr);
+    const auto* fh = (const oec_frame_header_t*)f;
+    EXPECT_EQ(fh->stream_id, OEC_STREAM_ERROR);
+    uint16_t code = 0;
+    std::memcpy(&code, (const uint8_t*)f + sizeof(*fh), 2);
+    EXPECT_EQ(code, OEC_ERR_BAD_MAGIC);
+    oec_ringbuf_detach(rb);
+
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
+TEST(HotPath, CmdWithWrongMajorVersionIsRefused) {
+    ShmemTransport t;
+    std::string name = uniq() + ".badver";
+    ASSERT_TRUE(t.start(name));
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+
+    oec_frame_header_t hdr;
+    oec_frame_init(&hdr, OEC_STREAM_CMD, 8, 0, 0, 0);
+    hdr.version_major = (uint8_t)(OEC_PROTOCOL_VERSION_MAJOR + 1);
+    auto body = makeSetTtl(/*line=*/3, /*edge=*/1);
+    injectCmdFrame(mapped, hdr, body.bytes, sizeof(body.bytes));
+
+    int callback_hits = 0;
+    ProcessorConfig cfg;
+    cfg.num_channels = 1; cfg.block_size = 1;
+    cfg.enable_continuous = false;
+    cfg.enable_spikes = cfg.enable_ttl = false;
+    cfg.on_ttl_emit = [&](uint8_t, uint8_t, uint64_t) { ++callback_hits; };
+
+    FileReaderAdapter board("ttl_out_log.csv");
+    AckOutbox outbox(64);
+    std::vector<int16_t> dummy(1, 0);
+    processBlock(dummy.data(), 0, cfg, t, board, outbox);
+
+    EXPECT_EQ(callback_hits, 0) << "spec 8.4: producer refuses commands on major mismatch";
+
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+    uint32_t sz = 0;
+    const void* f = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(f, nullptr);
+    uint16_t code = 0;
+    std::memcpy(&code, (const uint8_t*)f + sizeof(oec_frame_header_t), 2);
+    EXPECT_EQ(code, OEC_ERR_PROTOCOL_VERSION_MISMATCH);
+    oec_ringbuf_detach(rb);
+
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
 TEST(HotPath, SetTtlInvokesSyncMarkerCallback) {
     ShmemTransport t;
     std::string name = uniq() + ".marker";

@@ -93,6 +93,18 @@ project-wide versioning policy.
 | 0x21  | `ACK`            | `{cookie_u32, status_u16, body…}` (OE → Bonsai)                              |
 | 0x22  | `ERROR`          | `{code_u16, utf8_len_u16, utf8_msg[…]}`                                      |
 
+#### `ERROR.code` values
+
+Additive and forward-compatible: a receiver MUST treat an unrecognised code as
+opaque (log it, surface the message) rather than fail.
+
+| Code | Name                        | Meaning                                                   |
+|------|-----------------------------|-----------------------------------------------------------|
+| 1    | `PROTOCOL_VERSION_MISMATCH` | A received frame's `version_major` differs (§2.6, §8.4)   |
+| 2    | `FRAME_TOO_LARGE`           | Payload exceeds the maximum continuation span (§4.3)      |
+| 3    | `BAD_MAGIC`                 | A received frame failed the `magic` check                 |
+| 4    | `UNSUPPORTED_BOARD_SDK`     | Board SDK/firmware older than this release supports       |
+
 ### 3.2 `block_subheader` (RAW_BLOCK / FILTERED_BLOCK)
 
 Self-describes the block so the consumer never has to "remember" channel

@@ -68,6 +68,12 @@ void processBlock(
     PulseScheduler* pulses = nullptr);
 
 /**
+ * Publish one ERROR frame (spec §3.1: {code_u16, utf8_len_u16, utf8_msg[]}).
+ * `code` is one of the OEC_ERR_* values. Best-effort: dropped if the ring is full.
+ */
+void writeErrorFrame(ITransport& transport, uint16_t code, const char* msg);
+
+/**
  * Publish one TTL_EVENT frame (spec §3.1: {line_u8, edge_u8, board_id_u8, _pad}).
  * Wait-free; called from the audio thread while draining OE's event buffer.
  */

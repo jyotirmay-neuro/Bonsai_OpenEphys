@@ -43,6 +43,11 @@ public sealed class Session : IDisposable
 
     public long FrameCount;
     public long DropCount;
+    /// <summary>Frames rejected by magic/version validation (spec §2.6).</summary>
+    public long InvalidFrameCount;
+
+    private bool _versionMismatchRaised;
+    private bool _badMagicLogged;
 
     /* HELLO negotiation state (spec v1.1 §8). */
     public ushort RemoteMajor;
@@ -98,6 +103,18 @@ public sealed class Session : IDisposable
             fixed (byte* p = span)
             {
                 var h = *(OecFrameHeader*)p;
+
+                /* Spec §2.6: check magic and version_major before trusting any
+                 * field. A wrong major means the layout may differ, so nothing
+                 * below it can be parsed safely. */
+                var valid = NativeMethods.FrameValidate(in h);
+                if (valid != OecStatus.Ok)
+                {
+                    HandleInvalidFrame(valid);
+                    Transport.ConsumeData();
+                    continue;
+                }
+
                 Interlocked.Increment(ref FrameCount);
 
                 switch (h.StreamId)
@@ -117,6 +134,9 @@ public sealed class Session : IDisposable
                         break;
                     case OecStreams.Hello:
                         DispatchHello(p, span.Length);
+                        break;
+                    case OecStreams.Error:
+                        DispatchError(h, p, span.Length);
                         break;
                 }
                 if ((h.Flags & 0x0002) != 0) Interlocked.Increment(ref DropCount);
@@ -192,6 +212,61 @@ public sealed class Session : IDisposable
             SampleIndex = h.SampleIndex,
             HostQpcTicks = h.HostQpcTicks,
             FpgaSampleRateHz = rate
+        });
+    }
+
+    /// <summary>
+    /// A frame that fails magic/version validation (spec §2.6). Bad magic is
+    /// garbage — count it and move on. A major-version mismatch is fatal: the
+    /// remote speaks a layout we cannot parse, so stop rather than misinterpret it.
+    /// </summary>
+    private void HandleInvalidFrame(OecStatus status)
+    {
+        Interlocked.Increment(ref InvalidFrameCount);
+
+        if (status == OecStatus.EVersionMismatch && !_versionMismatchRaised)
+        {
+            _versionMismatchRaised = true;
+            RawSubject.OnError(new OpenEphysConnectionException(
+                Transport.Name, Endpoint, Interlocked.Read(ref DropCount),
+                $"PROTOCOL_VERSION_MISMATCH: the OEconnect plugin emits frame " +
+                $"version_major != {OecProtocol.VersionMajor}. Rebuild the plugin " +
+                "and the Bonsai package from the same protocol revision."));
+        }
+        else if (status == OecStatus.EBadMagic && !_badMagicLogged)
+        {
+            _badMagicLogged = true;
+            Trace.WriteLine("[OEconnect] frame failed magic check — ignoring (logged once)");
+        }
+    }
+
+    /// <summary>ERROR frame (spec §3.1): {code_u16, utf8_len_u16, utf8_msg[]}.</summary>
+    private unsafe void DispatchError(in OecFrameHeader h, byte* p, int len)
+    {
+        const int head = 4;   // code_u16 + utf8_len_u16
+        int avail = len - sizeof(OecFrameHeader);
+        if (avail < head) return;
+        int payload = h.PayloadLen <= (uint)avail ? (int)h.PayloadLen : avail;
+        if (payload < head) return;
+
+        byte* body = p + sizeof(OecFrameHeader);
+        ushort code = *(ushort*)(body + 0);
+        int textLen = *(ushort*)(body + 2);
+        if (textLen > payload - head) textLen = payload - head;
+
+        var message = textLen > 0
+            ? System.Text.Encoding.UTF8.GetString(body + head, textLen)
+            : string.Empty;
+
+        Trace.WriteLine($"[OEconnect] ERROR frame code={code}: {message}");
+        StatusSubject.OnNext(new SessionStatus
+        {
+            IsConnected = Transport.IsConnected,
+            Transport = Transport.Name,
+            FrameCount = Interlocked.Read(ref FrameCount),
+            DropCount = Interlocked.Read(ref DropCount),
+            LastErrorCode = code,
+            LastErrorMessage = message,
         });
     }
 

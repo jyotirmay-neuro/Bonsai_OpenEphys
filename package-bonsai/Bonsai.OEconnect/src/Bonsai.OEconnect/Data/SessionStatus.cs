@@ -9,6 +9,11 @@ public sealed class SessionStatus
     public long   DropCount   { get; init; }
     public double EstimatedLagMs { get; init; }
 
+    /* Populated when the plugin sends an ERROR frame (spec §3.1). Zero / empty
+     * otherwise. See OecErrors for the code values. */
+    public ushort LastErrorCode { get; init; }
+    public string LastErrorMessage { get; init; } = string.Empty;
+
     /* Remote protocol version, populated when a HELLO frame is received.
      * Falls back to v1.0 if the remote never sends HELLO within 2 s (see
      * spec/oec-protocol-v1.md §8.3). */

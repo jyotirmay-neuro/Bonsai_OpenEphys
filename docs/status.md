@@ -26,8 +26,9 @@ Last verified: 2026-07-08.
 | Auto-discovery | Working | Sidecar JSON + shared-region heartbeat liveness check. One sidecar per OEconnect node (`<pid>-<node_id>.json`); with several nodes in a chain, give each Bonsai source an explicit `Endpoint`. |
 | Frame bounds validation | Working | Untrusted frames are length-checked before any copy. |
 | `BIT_LOST_DATA` flag (§4.3) | Working | Armed by any drop (ring-full eviction or oversized frame) and stamped on the next published frame, exactly once. Bonsai's `SessionStatus.DropCount` counts gaps; the OE editor shows total frames lost. Ring-full evictions were previously uncounted entirely — `oec_ringbuf_acquire(drop_oldest=1)` returns a slot rather than NULL, so the new `oec_ringbuf_evictions()` counter is what makes them observable. |
-| Frame magic/version check on receive (§2.6) | **Missing** | Neither side calls `oec_frame_validate()`. A frame with a plausible `stream_id` is parsed without checking `magic` or `version_major`. Payload bounds *are* checked, so this is a conformance gap rather than a memory-safety one. |
+| Frame magic/version check on receive (§2.6, §8.4) | Working | Both sides call `oec_frame_validate()` before touching any field. The plugin refuses a command whose major differs and answers with `ERROR(PROTOCOL_VERSION_MISMATCH)`; the consumer drops the frame, counts it in `InvalidFrameCount`, and raises a fatal `OnError` on a major mismatch. |
 | `BIT_CONTINUATION` multi-slot frames (§4.3) | **Missing** | Frames larger than one slot should span up to 4 slots, else `ERROR(FRAME_TOO_LARGE)`. Instead they are dropped and counted. |
+| `ERROR` frame handling | Working | Producer emits `{code_u16, utf8_len_u16, utf8_msg[]}` per §3.1 (the previous hand-rolled emission omitted the length field). Consumer parses it into `SessionStatus.LastErrorCode` / `.LastErrorMessage`. Codes are now enumerated in spec §3.1. |
 | `SYNC` `stream_meta[]` triples (§3.1) | **Missing** | `SYNC` carries `qpc_freq_hz` + `fpga_sample_rate_hz` only; the per-source `{source_id, n_channels, sample_rate}` array is not emitted. |
 | CRC-16 (§2.1, optional) | **Missing** | `oec_crc16()` exists and is unit-tested but is never computed or verified on the hot path. `crc16` is always 0, which the spec permits. |
 | `FILTERED_BLOCK` publish | Working | The node publishes its input **once**, under the stream id chosen by the *Stream label* parameter (`Raw` or `Filtered`). It does not filter — the label must describe where you placed the node. For both streams, branch the chain and run two OEconnect nodes. |
@@ -108,8 +109,8 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 | Suite | Count | Covers |
 |---|---|---|
 | `libshared` (C) | 35 | Ring buffer SPSC + eviction accounting, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
-| Plugin (C++) | 18 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming |
-| Bonsai (C#) | 24 | Interop, HELLO negotiation matrix, command builder, CURVE client policy (loopback exemption, fail-closed, key validation), end-to-end shared-memory round trip against a synthetic producer |
+| Plugin (C++) | 20 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming, command frame validation (bad magic / wrong major refused + ERROR reported) |
+| Bonsai (C#) | 30 | Interop, HELLO negotiation matrix, command builder, CURVE client policy, frame validation (bad magic dropped, major mismatch fatal, minor forward-compatible), ERROR frame parsing, end-to-end shared-memory round trip |
 
 The end-to-end round trip drives a real synthetic producer over shared memory and
 asserts that `RawSamples` delivers blocks, so the data path is covered from the
