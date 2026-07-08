@@ -23,9 +23,12 @@ OEconnectEditor::OEconnectEditor(GenericProcessor* p) : GenericEditor(p) {
     OEC_ADD_TOGGLE_EDITOR("stream_ttl", 170, 68);
     OEC_ADD_TOGGLE_EDITOR("direct_board_trigger", 170, 88);
 
-    OEC_ADD_TEXT_EDITOR("zmq_bind", 10, 92);
-    OEC_ADD_TEXT_EDITOR("zmq_data_port", 10, 116);
-    OEC_ADD_TEXT_EDITOR("zmq_cmd_port", 90, 116);
+    OEC_ADD_COMBO_EDITOR("slot_size", 10, 84);
+    OEC_ADD_COMBO_EDITOR("slot_count", 150, 84);
+
+    OEC_ADD_TEXT_EDITOR("zmq_bind", 10, 120);
+    OEC_ADD_TEXT_EDITOR("zmq_data_port", 150, 120);
+    OEC_ADD_TEXT_EDITOR("zmq_cmd_port", 245, 120);
 
     status_.setText("idle", dontSendNotification);
     status_.setJustificationType(Justification::topLeft);
@@ -51,7 +54,7 @@ void OEconnectEditor::timerCallback() {
 void OEconnectEditor::resized() {
     GenericEditor::resized();
     auto area = getLocalBounds().reduced(6);
-    status_.setBounds(area.getX(), 146, area.getWidth(), 34);
+    status_.setBounds(area.getX(), 152, area.getWidth(), 34);
 }
 
 GenericEditor* createOEconnectEditor(OEconnectJuceProcessor* p) {

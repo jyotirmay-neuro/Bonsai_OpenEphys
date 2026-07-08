@@ -60,7 +60,8 @@ Last verified: 2026-07-08.
 |---|---|---|
 | OE editor parameters | Working | Declared as OE `Parameter`s: tooltips from their descriptions, saved/restored with the signal chain, locked during acquisition where changing them mid-run would be unsafe. |
 | Transport / stream / ZMQ bind + ports | Working | Wired to the running configuration. |
-| Block size, slot size, slot count | **Not configurable** | Block size is dictated by OE's acquisition callback. Ring geometry is compile-time (64 KiB × 256 slots), despite what spec §4.7 implies. |
+| Ring slot size / slot count | Working | Editor-configurable per spec §4.7 (`slot_size` 64 KiB–1 MiB, `slot_count` 64–1024). Categorical choices, so `slot_count` is always a power of two — `oec_region_size()` rejects anything else and the transport refuses to start. The consumer reads geometry from the region header. Command/ack rings stay at defaults (sparse traffic). |
+| Block size | **Not configurable** | Dictated by OE's acquisition callback, not by us. |
 
 ## OE GUI compatibility
 
@@ -83,11 +84,8 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 2. **Pre-0.6 GUI lines (0.4.x / 0.5.x) are unsupported.** They predate
    `DataStream` and the `Parameter` class, on which this plugin is built.
    See [oe-version-compatibility.md](oe-version-compatibility.md).
-3. **Ring geometry is not editor-configurable** even though spec §4.7 says it is.
-   A slot is 64 KiB, so a block needing `40 + n_channels x n_samples x 2` bytes
-   above that cannot be published — at the usual 32-sample block that caps you at
-   1023 channels. Such frames are now *counted* as drops rather than vanishing
-   silently, but the geometry still cannot be raised.
+3. **`wakeup_batch_K` (§4.4/§4.7) is not implemented.** The consumer uses adaptive
+   spin rather than named events; the spec marks wakeups optional.
 
 ### Resolved
 
@@ -99,7 +97,8 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
   scoped by OE node id, so each node owns its own single-producer rings.
 - ~~`RAW_BLOCK` could carry filtered data~~ — one node now publishes its input once,
   under an explicit *Stream label*.
-- ~~Oversized blocks vanished silently~~ — now counted via `ITransport::noteDropped()`.
+- ~~Oversized blocks vanished silently~~ — now counted via `ITransport::noteDropped()`,
+  and `slot_size` can be raised to admit them (§4.7).
 - ~~No `SPIKE` / `TTL_EVENT` emission~~ — both republished from OE's event bus.
   Also fixed a consumer bug: the spike parser sized the waveform from the ring
   *slot* size rather than the frame's `payload_len`.
@@ -109,8 +108,8 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 | Suite | Count | Covers |
 |---|---|---|
 | `libshared` (C) | 35 | Ring buffer SPSC + eviction accounting, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
-| Plugin (C++) | 23 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming, command frame validation, slow-command BUSY gating (incl. slot held until the dispatcher returns) |
-| Bonsai (C#) | 32 | Interop, HELLO negotiation matrix, command builder, CURVE client policy, frame validation, ERROR frame parsing, drift residual/reset semantics, end-to-end shared-memory round trip |
+| Plugin (C++) | 25 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize + eviction drop accounting, LOST_DATA flag arming, command frame validation, slow-command BUSY gating (incl. slot held until the dispatcher returns) |
+| Bonsai (C#) | 33 | Interop, HELLO negotiation matrix, command builder, CURVE client policy, frame validation, ERROR frame parsing, drift residual/reset semantics, non-default ring geometry, end-to-end shared-memory round trip |
 
 The end-to-end round trip drives a real synthetic producer over shared memory and
 asserts that `RawSamples` delivers blocks, so the data path is covered from the

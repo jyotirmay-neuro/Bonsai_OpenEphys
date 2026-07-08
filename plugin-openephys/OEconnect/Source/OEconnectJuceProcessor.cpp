@@ -62,6 +62,14 @@ OEconnectJuceProcessor::~OEconnectJuceProcessor() {
 static const juce::StringArray kTransportModes { "Auto", "SharedMem", "Zmq" };
 static const juce::StringArray kStreamLabels   { "Raw", "Filtered" };
 
+/* Ring geometry choices (spec §4.7). Categorical rather than free-form so
+ * slot_count is always a power of two -- oec_region_size() rejects anything else,
+ * and a typo'd text box would silently refuse to start the transport. */
+static const juce::StringArray kSlotSizes  { "64 KiB", "128 KiB", "256 KiB", "512 KiB", "1 MiB" };
+static const juce::StringArray kSlotCounts { "64", "128", "256", "512", "1024" };
+static const uint32_t kSlotSizeValues[]  = { 65536u, 131072u, 262144u, 524288u, 1048576u };
+static const uint32_t kSlotCountValues[] = { 64u, 128u, 256u, 512u, 1024u };
+
 void OEconnectJuceProcessor::registerOecParameters() {
     OEC_ADD_CATEGORICAL(
         "transport", "Transport",
@@ -113,6 +121,24 @@ void OEconnectJuceProcessor::registerOecParameters() {
         "latch a line, so SetTtl always goes via the event bus. Boards that do not "
         "understand the command ignore it, so this is harmless to leave on.",
         /*defaultValue=*/false, /*deactivateDuringAcquisition=*/false);
+
+    OEC_ADD_CATEGORICAL(
+        "slot_size", "Ring slot size",
+        "Largest frame this node can publish over shared memory. A continuous block "
+        "needs 40 + n_channels x n_samples x 2 bytes; anything bigger is dropped and "
+        "counted, and Bonsai sees silence. At the usual 32-sample block, 64 KiB caps "
+        "you at 1023 channels -- raise this for wider probes. Ignored for ZMQ.",
+        OEC_CATEGORIES(kSlotSizes),
+        /*defaultIndex=*/0, /*deactivateDuringAcquisition=*/true);
+
+    OEC_ADD_CATEGORICAL(
+        "slot_count", "Ring slot count",
+        "How many frames the shared-memory ring holds, i.e. how long Bonsai may "
+        "stall before the oldest unread frame is overwritten. 256 slots is about "
+        "270 ms at a 32-sample block. Deeper costs RAM (slot size x slot count) but "
+        "never latency -- the producer does not wait. Ignored for ZMQ.",
+        OEC_CATEGORIES(kSlotCounts),
+        /*defaultIndex=*/2, /*deactivateDuringAcquisition=*/true);
 
     OEC_ADD_STRING(
         "zmq_bind", "ZMQ bind address",
@@ -173,6 +199,14 @@ void OEconnectJuceProcessor::parameterValueChanged(Parameter* param) {
         cfg_.enable_ttl = (bool)param->getValue();
     } else if (name.equalsIgnoreCase("direct_board_trigger")) {
         if (ttl_adapter_) ttl_adapter_->setDirectTrigger((bool)param->getValue());
+    } else if (name.equalsIgnoreCase("slot_size")) {
+        const int i = (int)param->getValue();
+        if (i >= 0 && i < (int)(sizeof(kSlotSizeValues) / sizeof(kSlotSizeValues[0])))
+            cfg_.slot_size = kSlotSizeValues[i];
+    } else if (name.equalsIgnoreCase("slot_count")) {
+        const int i = (int)param->getValue();
+        if (i >= 0 && i < (int)(sizeof(kSlotCountValues) / sizeof(kSlotCountValues[0])))
+            cfg_.slot_count = kSlotCountValues[i];
     } else if (name.equalsIgnoreCase("zmq_bind") ||
                name.equalsIgnoreCase("zmq_data_port") ||
                name.equalsIgnoreCase("zmq_cmd_port")) {
@@ -239,7 +273,9 @@ void OEconnectJuceProcessor::selectTransport() {
          * (raw on one branch, filtered on another) and each owns its own rings. */
         oec_shm_make_name((int)getpid(), getNodeId(), name, sizeof(name));
         cfg_.shm_name = name;
-        transport_ = std::make_unique<ShmemTransport>();
+        auto shmem = std::make_unique<ShmemTransport>();
+        shmem->configure(cfg_.slot_size, cfg_.slot_count);   /* before start() */
+        transport_ = std::move(shmem);
         if (!transport_->start(cfg_.shm_name)) {
             transport_ = std::make_unique<ZmqTransport>();
             transport_->start(cfg_.zmq_endpoint);

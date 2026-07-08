@@ -4,6 +4,10 @@
 #include "Sync/DriftEmitter.h"
 #include "Util/AckOutbox.h"
 
+extern "C" {
+#include "oeconnect/ringbuf.h"   /* OEC_DEFAULT_SLOT_SIZE / _SLOT_COUNT */
+}
+
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -33,6 +37,12 @@ struct ProcessorConfig {
 
     bool   enable_spikes   = true;
     bool   enable_ttl      = true;
+
+    /* Shared-memory ring geometry (spec §4.7). slot_size caps the largest frame
+     * this node can publish; slot_count is how long the consumer may stall before
+     * data is overwritten. slot_count must be a power of two. */
+    uint32_t slot_size  = OEC_DEFAULT_SLOT_SIZE;
+    uint32_t slot_count = OEC_DEFAULT_SLOT_COUNT;
     int    block_size      = 32;
     int    num_channels    = 256;
     double sample_rate_hz  = 30000.0;

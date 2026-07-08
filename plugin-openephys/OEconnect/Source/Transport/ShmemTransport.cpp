@@ -24,12 +24,17 @@ uint64_t realtime_ns() {
 }  // namespace
 
 namespace {
-constexpr uint32_t kSlotSize     = OEC_DEFAULT_SLOT_SIZE;
-constexpr uint32_t kSlotCount    = OEC_DEFAULT_SLOT_COUNT;
+/* Command and ack rings stay at spec §4.7's defaults: they carry sparse
+ * start/stop/TTL traffic, so there is nothing to tune. */
 constexpr uint32_t kCmdSlotSize  = OEC_DEFAULT_CMD_SLOT_SIZE;
 constexpr uint32_t kCmdSlotCount = OEC_DEFAULT_CMD_SLOT_COUNT;
 constexpr uint32_t kAckSlotSize  = OEC_DEFAULT_ACK_SLOT_SIZE;
 constexpr uint32_t kAckSlotCount = OEC_DEFAULT_ACK_SLOT_COUNT;
+}
+
+void ShmemTransport::configure(uint32_t slot_size, uint32_t slot_count) {
+    if (slot_size) slot_size_ = slot_size;
+    if (slot_count) slot_count_ = slot_count;
 }
 
 ShmemTransport::ShmemTransport() = default;
@@ -38,13 +43,17 @@ ShmemTransport::~ShmemTransport() { stop(); }
 bool ShmemTransport::start(const std::string& shm_name) {
     stop();
     name_ = shm_name;
+    /* Zero here means the requested geometry is invalid (e.g. slot_count not a
+     * power of two), so refuse rather than create an unusable region. */
     const size_t region_size = oec_region_size(
-        kSlotSize, kSlotCount, kCmdSlotSize, kCmdSlotCount,
+        slot_size_, slot_count_, kCmdSlotSize, kCmdSlotCount,
         kAckSlotSize, kAckSlotCount);
     if (region_size == 0) return false;
 
-    // First try to open an existing region (consumer-side mount).
-    if (oec_shm_open(shm_name.c_str(), region_size, &shm_,
+    /* First try to open an existing region. Map the WHOLE thing (size 0): an
+     * adopted region's own header dictates its geometry, which may differ from
+     * what we would have created. oec_region_open then validates it fits. */
+    if (oec_shm_open(shm_name.c_str(), 0, &shm_,
                      &mapped_, &mapped_size_) == OEC_OK) {
         // Adopting an existing region: never trust its header blindly. Validate
         // magic, version and that the advertised layout fits what we mapped
@@ -60,7 +69,7 @@ bool ShmemTransport::start(const std::string& shm_name) {
             return false;
         }
         if (oec_region_init(mapped_, mapped_size_,
-                            kSlotSize, kSlotCount,
+                            slot_size_, slot_count_,
                             kCmdSlotSize, kCmdSlotCount,
                             kAckSlotSize, kAckSlotCount) != OEC_OK) {
             stop();

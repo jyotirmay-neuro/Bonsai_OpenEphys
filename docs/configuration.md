@@ -100,6 +100,19 @@ Republish TTL edges crossing this node as `TTL_EVENT` frames (Bonsai's
 Edges that OEconnect *itself* issues (`SetTtl` / `PulseTtl`) go downstream and into
 the recording, but are not echoed back through this node.
 
+### Ring slot size / Ring slot count — *locked during acquisition*
+
+Shared-memory ring geometry (spec §4.7). Ignored when Transport is `Zmq`.
+
+| Control | Default | Meaning |
+|---|---|---|
+| **Ring slot size** | 64 KiB | Largest frame this node can publish. Raise it for wide probes: a block needs `40 + n_channels × n_samples × 2` bytes, so 64 KiB caps you at 1023 channels at a 32-sample block. |
+| **Ring slot count** | 256 | How many frames the ring holds — how long Bonsai may stall before the oldest unread frame is overwritten. ≈270 ms at a 32-sample block. |
+
+Both are offered as fixed choices rather than free text: `slot_count` must be a
+power of two, and RAM cost is `slot_size × slot_count` (the default is 16 MiB).
+Depth costs memory, never latency — the producer never waits for a consumer.
+
 ### ZMQ bind address — *locked during acquisition*
 
 Which network interface the ZMQ sockets bind to. **Ignored when Transport is
@@ -126,10 +139,9 @@ Dropped frames climb for two different reasons:
   evicted. Simplify the downstream workflow, or accept the loss (the plugin never
   blocks acquisition to wait for a consumer).
 - **The block does not fit one ring slot.** A frame needs
-  `40 + n_channels x n_samples x 2` bytes and a slot is 64 KiB, so at the usual
-  32-sample block you are capped at **1023 channels**. Exceed it and *every* frame
-  is dropped. Ring geometry is currently compile-time, so the only remedy is fewer
-  channels per OEconnect node.
+  `40 + n_channels x n_samples x 2` bytes, so the default 64 KiB slot tops out at
+  **1023 channels** at a 32-sample block. Exceed it and *every* frame is dropped —
+  raise **Ring slot size** (below).
 
 Both kinds arm the `BIT_LOST_DATA` header flag on the next frame the plugin
 publishes, so Bonsai's `SessionStatus.DropCount` counts the **gaps**, while the OE

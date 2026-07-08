@@ -33,12 +33,13 @@ public class FrameValidationTests
         private UIntPtr _mappedSize;
         private readonly string _name;
 
-        public RawProducer(string name)
+        public RawProducer(string name, uint slotSize = SlotSize, uint slotCount = SlotCount)
         {
             _name = name;
-            var size = NativeMethods.RegionSize(SlotSize, SlotCount, CmdSlotSize, CmdSlotCount, AckSlotSize, AckSlotCount);
+            var size = NativeMethods.RegionSize(slotSize, slotCount, CmdSlotSize, CmdSlotCount, AckSlotSize, AckSlotCount);
+            Assert.NotEqual(UIntPtr.Zero, size);
             Assert.Equal(OecStatus.Ok, NativeMethods.ShmCreate(_name, size, 1, out _shm, out _mapped, out _mappedSize));
-            Assert.Equal(OecStatus.Ok, NativeMethods.RegionInit(_mapped, _mappedSize, SlotSize, SlotCount, CmdSlotSize, CmdSlotCount, AckSlotSize, AckSlotCount));
+            Assert.Equal(OecStatus.Ok, NativeMethods.RegionInit(_mapped, _mappedSize, slotSize, slotCount, CmdSlotSize, CmdSlotCount, AckSlotSize, AckSlotCount));
             Assert.Equal(OecStatus.Ok, NativeMethods.RingbufAttach(_mapped, 0, out _dataRing));
         }
 
@@ -154,6 +155,44 @@ public class FrameValidationTests
         Assert.IsType<OpenEphysConnectionException>(captured);
         Assert.Contains("PROTOCOL_VERSION_MISMATCH", captured!.Message);
         Assert.Equal(0, Interlocked.Read(ref session.FrameCount));
+    }
+
+    /// <summary>
+    /// Spec §4.7: the producer's slot geometry is editor-configurable, so the
+    /// consumer must take it from the region header rather than assume the
+    /// defaults. A 256 KiB × 64 region carries a block far larger than 64 KiB.
+    /// </summary>
+    [Fact]
+    public unsafe void ConsumerReadsNonDefaultRingGeometryFromTheHeader()
+    {
+        const uint bigSlot = 262144u, fewSlots = 64u;
+        const int channels = 1024, samples = 64;
+
+        var name = MakeShmName("geometry");
+        using var prod = new RawProducer(name, bigSlot, fewSlots);
+
+        uint payload = (uint)(sizeof(OecBlockSubheader) + channels * samples * sizeof(short));
+        Assert.True(payload > 65536, "payload must exceed the default slot size");
+
+        prod.Emit(OecStreams.RawBlock, payload, slot =>
+        {
+            var sh = (OecBlockSubheader*)((byte*)slot + sizeof(OecFrameHeader));
+            sh->NumChannels = channels;
+            sh->NumSamples = samples;
+            sh->Dtype = 0;
+        });
+
+        using var session = AttachConsumer(name);
+        RawBlock? got = null;
+        using var sub = session.RawSubject.Subscribe(b => got ??= b.Clone(), _ => { });
+        session.StartReader();
+
+        SpinUntil(() => got != null, TimeSpan.FromSeconds(2));
+
+        Assert.NotNull(got);
+        Assert.Equal(channels, got!.Value.NumChannels);
+        Assert.Equal(samples, got.Value.NumSamples);
+        Assert.Equal(channels * samples, got.Value.Samples.Length);
     }
 
     [Fact]

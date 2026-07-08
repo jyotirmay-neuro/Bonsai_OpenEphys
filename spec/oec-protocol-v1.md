@@ -242,11 +242,16 @@ auto-discovery is ambiguous — give each Bonsai source an explicit `Endpoint`.
 
 | Knob             | Default  | Rationale                                                  |
 |------------------|----------|------------------------------------------------------------|
-| `slot_size`      | 64 KiB   | Holds 32 samp × 1024 ch × int16 + header                    |
-| `slot_count`     | 256      | 16 MiB → ~1 s buffer at 60 MB/s worst case                  |
+| `slot_size`      | 64 KiB   | Holds 32 samp × **1023** ch × int16 + 40 B header/subheader  |
+| `slot_count`     | 256      | 16 MiB → ~270 ms of 32-sample blocks at 30 kHz               |
 | `wakeup_batch_K` | 1        | One wakeup per frame; raise if scheduler thrash             |
 | `cmd_slot_count` | 64       | Sparse — start/stop/TTL                                     |
 | `ack_slot_count` | 64       | Matches command volume                                      |
+
+A frame needs `40 + n_channels × n_samples × 2` bytes, so 64 KiB tops out at 1023
+channels at a 32-sample block — not 1024. `slot_count` MUST be a power of two.
+A producer that cannot fit a frame in one slot drops it and sets `BIT_LOST_DATA`
+on the next frame it does publish (§4.3).
 
 ## 5. ZMQ transport
 

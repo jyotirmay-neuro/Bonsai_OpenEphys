@@ -214,6 +214,71 @@ TEST(HotPath, DropArmsLostDataFlagOnNextFrameExactlyOnce) {
     oec_shm_unlink(name.c_str());
 }
 
+/* Spec §4.7: raising slot_size admits blocks that the 64 KiB default rejects.
+ * 1024 ch x 64 samp x 2 B = 128 KiB payload -- dropped at 64 KiB, fine at 256 KiB. */
+TEST(HotPath, LargerSlotSizeAdmitsABlockThatTheDefaultRejects) {
+    ProcessorConfig cfg;
+    cfg.num_channels = 1024;
+    cfg.block_size   = 64;
+    cfg.enable_continuous = true;
+    cfg.enable_spikes = cfg.enable_ttl = false;
+    std::vector<int16_t> input((size_t)cfg.num_channels * cfg.block_size, 7);
+
+    FileReaderAdapter board("ttl_out_log.csv");
+    AckOutbox outbox(64);
+
+    {   /* Default 64 KiB: dropped, nothing published. */
+        ShmemTransport t;
+        std::string name = uniq() + ".geo64k";
+        ASSERT_TRUE(t.start(name));
+        processBlock(input.data(), 0, cfg, t, board, outbox);
+        EXPECT_EQ(t.totalDropped(), 1u);
+        t.stop();
+        oec_shm_unlink(name.c_str());
+    }
+
+    {   /* 256 KiB slots: the same block publishes. */
+        ShmemTransport t;
+        std::string name = uniq() + ".geo256k";
+        t.configure(/*slot_size=*/262144u, /*slot_count=*/64u);
+        ASSERT_TRUE(t.start(name));
+        processBlock(input.data(), 0, cfg, t, board, outbox);
+        EXPECT_EQ(t.totalDropped(), 0u);
+
+        /* The consumer maps the whole region and reads geometry from the header. */
+        oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+        ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+        oec_region_header_t* hdr = nullptr;
+        ASSERT_EQ(oec_region_open(mapped, msz, &hdr), OEC_OK);
+        EXPECT_EQ(hdr->slot_size, 262144u);
+        EXPECT_EQ(hdr->slot_count, 64u);
+
+        oec_ringbuf_t* rb = nullptr;
+        ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+        uint32_t sz = 0;
+        const void* f = oec_ringbuf_peek(rb, &sz);
+        ASSERT_NE(f, nullptr);
+        const auto* fh = (const oec_frame_header_t*)f;
+        EXPECT_EQ(fh->stream_id, OEC_STREAM_RAW_BLOCK);
+        EXPECT_EQ(fh->payload_len, 8u + 1024u * 64u * sizeof(int16_t));
+        oec_ringbuf_detach(rb);
+        oec_shm_close(h);
+
+        t.stop();
+        oec_shm_unlink(name.c_str());
+    }
+}
+
+/* slot_count must stay a power of two: oec_region_size() rejects anything else,
+ * so the transport must refuse to start rather than create an unusable region. */
+TEST(HotPath, NonPowerOfTwoSlotCountIsRefused) {
+    ShmemTransport t;
+    std::string name = uniq() + ".geobad";
+    t.configure(/*slot_size=*/65536u, /*slot_count=*/100u);   // not a power of two
+    EXPECT_FALSE(t.start(name));
+    oec_shm_unlink(name.c_str());
+}
+
 /* A ring-full eviction is a real data loss, and used to be invisible: with
  * dropOldest the ring returns a slot rather than nullptr. */
 TEST(HotPath, RingFullEvictionIsCountedAsDropped) {

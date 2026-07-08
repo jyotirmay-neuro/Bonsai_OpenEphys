@@ -120,6 +120,7 @@ be unsafe) is locked while acquisition runs.
 | **Stream spikes** | Republish OE's spike events. On by default. Needs a Spike Detector **upstream**. |
 | **Stream TTL events** | Republish OE's TTL edges (board digital inputs, upstream detectors). On by default. |
 | **Direct board trigger** | Also broadcast `ACQBOARD TRIGGER` so the board fires pulses itself. Off by default. Pulses only. |
+| **Ring slot size / count** | Shared-memory geometry (§4.7). 64 KiB × 256 by default; raise slot size for >1023 channels. |
 | **ZMQ bind address** | `127.0.0.1` by default. A routable address requires CURVE auth. |
 | **ZMQ data / command port** | `5557` / `5558`. Must differ. |
 | *(status line)* | Active transport, detected board, cumulative dropped frames. |

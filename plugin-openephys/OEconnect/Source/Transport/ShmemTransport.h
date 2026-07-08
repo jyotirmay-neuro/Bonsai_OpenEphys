@@ -15,6 +15,15 @@ public:
     ShmemTransport();
     ~ShmemTransport() override;
 
+    /**
+     * Ring geometry for a region this transport CREATES (spec §4.7). Must be called
+     * before start(). `slot_count` must be a power of two; `slot_size` caps the
+     * largest publishable frame at `slot_size - 40` payload bytes.
+     *
+     * Ignored when start() adopts an existing region: its header is authoritative.
+     */
+    void configure(uint32_t slot_size, uint32_t slot_count);
+
     bool start(const std::string& shm_name) override;
     void stop() override;
 
@@ -48,6 +57,8 @@ private:
     bool           lost_data_pending_ = false;
     uint64_t       last_evictions_ = 0;   /* to detect ring-full evictions */
     std::string    name_;
+    uint32_t       slot_size_  = OEC_DEFAULT_SLOT_SIZE;
+    uint32_t       slot_count_ = OEC_DEFAULT_SLOT_COUNT;
 };
 
 }  // namespace oec::plugin
