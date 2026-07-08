@@ -7,11 +7,17 @@ using Bonsai.OEconnect.Sessions;
 namespace Bonsai.OEconnect.Operators;
 
 [Combinator]
-[Description("Sends STOP_RECORD to OpenEphys.")]
+[Description(
+    "Tells OpenEphys to stop recording, once per element received, and passes the " +
+    "element through unchanged. Like StartRecording this is a \"slow\" command, " +
+    "acknowledged immediately and executed on a worker thread. Stops every Record " +
+    "Node in the OE signal chain; acquisition itself keeps running.")]
 [WorkflowElementCategory(ElementCategory.Sink)]
 public class StopRecording
 {
-    [Description("Endpoint of the OE session; empty = auto-discovery.")]
+    [Description(
+        "Which OE session to command. Empty = auto-discovery (newest live " +
+        "plugin). Otherwise \"shm://...\" or \"tcp://host:5557|tcp://host:5558\".")]
     public string Endpoint { get; set; } = string.Empty;
 
     public IObservable<TSource> Process<TSource>(IObservable<TSource> source)

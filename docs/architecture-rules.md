@@ -14,6 +14,14 @@ acquisition board's firmware is reached only via the OE Source Node API. A
 copy of every closed-loop output the bridge ever issued. Bypassing OE
 splits the event-bus record and silently invalidates the backup.
 
+> **Current compliance: partial.** The routing rule holds — every command does
+> cross the plugin, and no direct path exists. But the plugin's `on_ttl_emit`
+> hook is still a stub: it never calls `addEvent()`, so Bonsai-issued TTLs are
+> *not* written to OE's event bus, and the "complete copy" guarantee above does
+> not hold in practice yet. The board adapters are likewise no-ops, so no TTL
+> reaches hardware at all. Both gaps are tracked in [status.md](status.md) and
+> must be closed before this rule's rationale is actually satisfied.
+
 ## 2. The audio thread is the only writer of shmem rings
 
 Three shmem rings (`data_ring`, `cmd_ring`, `ack_ring`) all have the OE

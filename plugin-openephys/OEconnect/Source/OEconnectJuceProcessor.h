@@ -28,6 +28,14 @@ public:
     bool startAcquisition() override;
     bool stopAcquisition() override;
 
+    /** Declares the editor-visible parameters. Each carries a displayName and a
+     *  description (shown as the control's tooltip) and is saved/restored with
+     *  the signal chain automatically. */
+    void registerParameters() override;
+
+    /** Pushes a changed parameter into cfg_. */
+    void parameterValueChanged(Parameter* param) override;
+
     /** Called by the editor when UI knobs change. */
     void applyConfig(const ProcessorConfig& cfg);
 
@@ -39,6 +47,8 @@ public:
 private:
     void selectBoardAdapter();
     void selectTransport();
+    /** Rebuilds cfg_.zmq_endpoint from the bind-address / port parameters. */
+    void rebuildZmqEndpoint();
 
     ProcessorConfig cfg_;
     std::unique_ptr<ITransport>     transport_;

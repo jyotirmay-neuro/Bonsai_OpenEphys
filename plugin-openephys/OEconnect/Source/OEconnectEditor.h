@@ -1,6 +1,12 @@
 #pragma once
 /*
  * JUCE editor UI for OEconnect. Compiled only when OEC_PLUGIN_BUILD_BUNDLE=ON.
+ *
+ * All configurable knobs are declared as OE Parameters in
+ * OEconnectJuceProcessor::registerParameters(). This editor only lays out the
+ * parameter editors the framework builds from them (so each control gets its
+ * displayName as a label and its description as a tooltip, and is saved and
+ * restored with the signal chain), plus a read-only status line.
  */
 
 #include <EditorHeaders.h>
@@ -15,7 +21,6 @@ public:
     explicit OEconnectEditor(GenericProcessor* p);
     ~OEconnectEditor() override;
     void timerCallback() override;
-    void paint(Graphics& g) override;
     void resized() override;
 
 private:
@@ -23,14 +28,8 @@ private:
         return static_cast<OEconnectJuceProcessor*>(getProcessor());
     }
 
-    ComboBox    transport_box_;
-    TextEditor  zmq_port_;
-    TextEditor  bind_addr_;
-    ToggleButton auth_toggle_;
-    ToggleButton stream_raw_, stream_filt_, stream_spk_, stream_ttl_;
-    ComboBox    block_size_;
-    TextEditor  slot_count_;
-    Label       status_;
+    /* Live telemetry only; every editable knob is a registered Parameter. */
+    Label status_;
 };
 
 /* Returns GenericEditor* so the processor can take ownership via its

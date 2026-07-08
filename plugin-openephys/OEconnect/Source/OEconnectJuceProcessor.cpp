@@ -56,6 +56,90 @@ OEconnectJuceProcessor::~OEconnectJuceProcessor() {
     if (transport_) transport_->stop();
 }
 
+/* Categories must stay in sync with the switch in parameterValueChanged(). */
+static const juce::StringArray kTransportModes { "Auto", "SharedMem", "Zmq" };
+
+void OEconnectJuceProcessor::registerParameters() {
+    addCategoricalParameter(
+        Parameter::PROCESSOR_SCOPE, "transport", "Transport",
+        "How samples reach Bonsai. Auto: shared memory if Bonsai runs on this "
+        "machine, else ZMQ. SharedMem: lock-free shared ring, sub-millisecond, "
+        "same host only. Zmq: TCP sockets, works across machines, 1-5 ms typical.",
+        Array<String>(kTransportModes.begin(), kTransportModes.size()),
+        /*defaultIndex=*/0, /*deactivateDuringAcquisition=*/true);
+
+    addBooleanParameter(
+        Parameter::PROCESSOR_SCOPE, "stream_raw", "Stream raw",
+        "Publish the unprocessed broadband block each callback (stream id "
+        "RAW_BLOCK). This is what Bonsai's RawSamples node receives.",
+        /*defaultValue=*/true, /*deactivateDuringAcquisition=*/false);
+
+    addBooleanParameter(
+        Parameter::PROCESSOR_SCOPE, "stream_filtered", "Stream filtered",
+        "Publish a second copy of the incoming block tagged FILTERED_BLOCK. "
+        "NOTE: this node does not filter - it forwards whatever the upstream "
+        "chain already produced. Place a Bandpass Filter before OEconnect to "
+        "make this meaningful, otherwise it duplicates the raw stream.",
+        /*defaultValue=*/false, /*deactivateDuringAcquisition=*/false);
+
+    addStringParameter(
+        Parameter::PROCESSOR_SCOPE, "zmq_bind", "ZMQ bind address",
+        "Interface the ZMQ sockets bind to. 127.0.0.1 keeps the data and "
+        "control channels on this machine (no authentication needed). Any "
+        "routable address (e.g. 0.0.0.0) exposes them to the network and is "
+        "REFUSED unless the OEC_ZMQ_CURVE_SECRET environment variable holds a "
+        "40-character CURVE key. Ignored when Transport is SharedMem.",
+        "127.0.0.1", /*deactivateDuringAcquisition=*/true);
+
+    addIntParameter(
+        Parameter::PROCESSOR_SCOPE, "zmq_data_port", "ZMQ data port",
+        "TCP port for the outbound data stream (PUB socket). Bonsai subscribes "
+        "here. Ignored when Transport is SharedMem.",
+        5557, 1024, 65535, /*deactivateDuringAcquisition=*/true);
+
+    addIntParameter(
+        Parameter::PROCESSOR_SCOPE, "zmq_cmd_port", "ZMQ command port",
+        "TCP port for the inbound command channel (REP socket) carrying "
+        "START_RECORD / TTL commands from Bonsai. Must differ from the data "
+        "port. Ignored when Transport is SharedMem.",
+        5558, 1024, 65535, /*deactivateDuringAcquisition=*/true);
+
+    rebuildZmqEndpoint();
+}
+
+void OEconnectJuceProcessor::rebuildZmqEndpoint() {
+    auto* bind = getParameter("zmq_bind");
+    auto* dport = getParameter("zmq_data_port");
+    auto* cport = getParameter("zmq_cmd_port");
+    if (!bind || !dport || !cport) return;
+
+    const String addr = bind->getValue().toString();
+    const int data_port = (int)dport->getValue();
+    const int cmd_port  = (int)cport->getValue();
+
+    cfg_.zmq_endpoint = ("tcp://" + addr + ":" + String(data_port) +
+                         "|tcp://" + addr + ":" + String(cmd_port)).toStdString();
+}
+
+void OEconnectJuceProcessor::parameterValueChanged(Parameter* param) {
+    if (param == nullptr) return;
+    const String name = param->getName();
+
+    if (name.equalsIgnoreCase("transport")) {
+        const int idx = (int)param->getValue();
+        if (idx >= 0 && idx < kTransportModes.size())
+            cfg_.transport_mode = kTransportModes[idx].toStdString();
+    } else if (name.equalsIgnoreCase("stream_raw")) {
+        cfg_.enable_raw = (bool)param->getValue();
+    } else if (name.equalsIgnoreCase("stream_filtered")) {
+        cfg_.enable_filtered = (bool)param->getValue();
+    } else if (name.equalsIgnoreCase("zmq_bind") ||
+               name.equalsIgnoreCase("zmq_data_port") ||
+               name.equalsIgnoreCase("zmq_cmd_port")) {
+        rebuildZmqEndpoint();
+    }
+}
+
 AudioProcessorEditor* OEconnectJuceProcessor::createEditor() {
     OECDIAG("createEditor enter");
     /* GenericProcessor owns the editor through its `editor` unique_ptr, and
@@ -230,12 +314,24 @@ void OEconnectJuceProcessor::process(AudioBuffer<float>& buffer) {
     const int ch = buffer.getNumChannels();
     const int ns = buffer.getNumSamples();
     if (scratch_.size() < (size_t)(ch * ns)) scratch_.resize((size_t)(ch * ns));
-    /* Convert float -> int16 chan-major. */
+    /* Convert float -> int16 chan-major.
+     *
+     * OE continuous buffers hold MICROVOLTS, not normalised [-1,1] audio.
+     * Scaling by 32767 (as if this were audio) saturates every sample above
+     * ~1 uV, which clips real ephys into a square wave. Divide by the channel's
+     * bitVolts instead to recover the raw ADC counts the recorder stores.
+     * Consumers multiply by bitVolts to get microvolts back. */
     for (int c = 0; c < ch; ++c) {
         const float* in = buffer.getReadPointer(c);
         int16_t* out = scratch_.data() + c * ns;
+
+        const ContinuousChannel* chan = getContinuousChannel(c);
+        const float bit_volts = (chan && chan->getBitVolts() > 0.0f)
+                                    ? chan->getBitVolts() : 1.0f;
+        const float inv_bit_volts = 1.0f / bit_volts;
+
         for (int s = 0; s < ns; ++s) {
-            float v = in[s] * 32767.0f;
+            float v = in[s] * inv_bit_volts;
             if (v > 32767.f) v = 32767.f; else if (v < -32768.f) v = -32768.f;
             out[s] = (int16_t)v;
         }

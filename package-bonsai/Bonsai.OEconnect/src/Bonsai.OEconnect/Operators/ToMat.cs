@@ -12,7 +12,13 @@ namespace Bonsai.OEconnect.Operators;
 /// The output owns a fresh allocation; the input pooled buffer is released after copy.
 /// </summary>
 [Combinator]
-[Description("Converts RawBlock to a Bonsai.Dsp Mat (rows = channels, cols = samples).")]
+[Description(
+    "Converts a RawBlock into an OpenCV Mat (rows = channels, cols = samples, " +
+    "depth = S16) so it can be plotted or processed by the Bonsai.Dsp operators. " +
+    "This is the node to attach a visualizer to: right-click it and choose a " +
+    "matrix/waveform visualizer to watch the signal live. The Mat owns a fresh " +
+    "copy, so unlike the incoming RawBlock it is safe to retain. Values are int16 " +
+    "ADC counts - multiply by the channel's bitVolts to get microvolts.")]
 [WorkflowElementCategory(ElementCategory.Transform)]
 public class ToMat
 {
