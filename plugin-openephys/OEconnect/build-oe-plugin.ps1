@@ -15,22 +15,34 @@
 #>
 param(
   [string]$Config = "Release",
-  [string]$Arch = "x64"
+  [string]$Arch = "x64",
+  # Point at a different plugin-GUI checkout to build for another API version.
+  # Defaults to the submodule (GUI 1.0.x, plugin API v10).
+  [string]$GuiDir = ""
 )
 # NB: do NOT set $ErrorActionPreference='Stop'. cmake/MSBuild write progress and
 # deprecation warnings to stderr; under 'Stop' (especially with 2>&1) PowerShell
 # turns those into terminating errors. We gate on $LASTEXITCODE after each native
 # call and throw explicitly instead.
 $root = $PSScriptRoot
-$gui  = Join-Path $root "external/plugin-GUI"
+$gui  = if ($GuiDir) { (Resolve-Path $GuiDir).Path } else { Join-Path $root "external/plugin-GUI" }
 $guiBuild = Join-Path $gui "Build"
-$pluginSrc = Join-Path $root "oe-gui-plugin"
-$pluginBuild = Join-Path $root "build-oe-plugin"
-$dist = Join-Path $root "dist-oe-plugin"
 
 if (-not (Test-Path (Join-Path $gui "CMakeLists.txt"))) {
-  throw "plugin-GUI submodule not initialized. Run: git submodule update --init --recursive"
+  throw "plugin-GUI not found at '$gui'. For the submodule run: git submodule update --init --recursive"
 }
+
+# A plugin binary is bound to one plugin API version: PluginManager rejects any
+# library whose apiVersion != PLUGIN_API_VER. Key the build and dist directories
+# on that version so several GUI lines can be built side by side.
+$apiHeader = Join-Path $gui "Source/Processors/PluginManager/OpenEphysPlugin.h"
+$apiVer = (Select-String -Path $apiHeader -Pattern '#define\s+PLUGIN_API_VER\s+(\d+)').Matches[0].Groups[1].Value
+if (-not $apiVer) { throw "could not read PLUGIN_API_VER from $apiHeader" }
+Write-Host "Open Ephys plugin API version: v$apiVer  (GUI: $gui)" -ForegroundColor Cyan
+
+$pluginSrc   = Join-Path $root "oe-gui-plugin"
+$pluginBuild = Join-Path $root "build-oe-plugin-api$apiVer"
+$dist        = Join-Path $root "dist-oe-plugin/api-v$apiVer"
 
 Write-Host "== Stage 1: build Open Ephys GUI (open-ephys target) ==" -ForegroundColor Cyan
 cmake -S $gui -B $guiBuild -A $Arch
@@ -44,7 +56,12 @@ if (-not $oelib) { throw "open-ephys.lib not found under $guiBuild after the GUI
 Write-Host "open-ephys.lib: $($oelib.FullName)"
 
 Write-Host "== Stage 2: build OEconnect plugin ==" -ForegroundColor Cyan
-cmake -S $pluginSrc -B $pluginBuild -A $Arch "-DOPEN_EPHYS_LIB=$($oelib.FullName)"
+# GUI_BASE_DIR must point at the SAME checkout that produced open-ephys.lib --
+# otherwise we compile against one version's headers and link another's library,
+# which surfaces as a wall of unresolved externals with subtly wrong signatures.
+cmake -S $pluginSrc -B $pluginBuild -A $Arch `
+      "-DGUI_BASE_DIR=$gui" `
+      "-DOPEN_EPHYS_LIB=$($oelib.FullName)"
 if ($LASTEXITCODE) { throw "plugin configure failed" }
 cmake --build $pluginBuild --config $Config --parallel
 if ($LASTEXITCODE) { throw "plugin build failed" }
@@ -60,4 +77,5 @@ if (Test-Path $guiPlugins) { Copy-Item $dll.FullName $guiPlugins -Force }
 
 Write-Host "OEconnect plugin built: $($dll.FullName)" -ForegroundColor Green
 Write-Host "Copied to: $dist" -ForegroundColor Green
-Write-Host "Install: drop OEconnect.dll into the OE GUI 'plugins' folder, restart the GUI." -ForegroundColor Green
+Write-Host "Install: drop OEconnect.dll into the plugins folder of a GUI whose plugin API is v$apiVer." -ForegroundColor Green
+Write-Host "         (a GUI with a different API version will refuse to load it)" -ForegroundColor Green

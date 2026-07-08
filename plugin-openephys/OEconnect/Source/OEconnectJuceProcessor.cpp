@@ -48,7 +48,12 @@ namespace oec::plugin {
  * block-scope extern that would resolve to the global namespace. */
 GenericEditor* createOEconnectEditor(OEconnectJuceProcessor*);
 
-OEconnectJuceProcessor::OEconnectJuceProcessor() : GenericProcessor("OEconnect") { OECDIAG("ctor done"); }
+OEconnectJuceProcessor::OEconnectJuceProcessor() : GenericProcessor("OEconnect") {
+    /* On plugin API v8 there is no registerParameters() hook, so parameters are
+     * declared here. On v10 this expands to a no-op. */
+    OEC_REGISTER_PARAMS_IN_CTOR();
+    OECDIAG("ctor done");
+}
 OEconnectJuceProcessor::~OEconnectJuceProcessor() {
     if (transport_) transport_->stop();
 }
@@ -56,31 +61,31 @@ OEconnectJuceProcessor::~OEconnectJuceProcessor() {
 /* Categories must stay in sync with the switch in parameterValueChanged(). */
 static const juce::StringArray kTransportModes { "Auto", "SharedMem", "Zmq" };
 
-void OEconnectJuceProcessor::registerParameters() {
-    addCategoricalParameter(
-        Parameter::PROCESSOR_SCOPE, "transport", "Transport",
+void OEconnectJuceProcessor::registerOecParameters() {
+    OEC_ADD_CATEGORICAL(
+        "transport", "Transport",
         "How samples reach Bonsai. Auto: shared memory if Bonsai runs on this "
         "machine, else ZMQ. SharedMem: lock-free shared ring, sub-millisecond, "
         "same host only. Zmq: TCP sockets, works across machines, 1-5 ms typical.",
-        Array<String>(kTransportModes.begin(), kTransportModes.size()),
+        OEC_CATEGORIES(kTransportModes),
         /*defaultIndex=*/0, /*deactivateDuringAcquisition=*/true);
 
-    addBooleanParameter(
-        Parameter::PROCESSOR_SCOPE, "stream_raw", "Stream raw",
+    OEC_ADD_BOOL(
+        "stream_raw", "Stream raw",
         "Publish the unprocessed broadband block each callback (stream id "
         "RAW_BLOCK). This is what Bonsai's RawSamples node receives.",
         /*defaultValue=*/true, /*deactivateDuringAcquisition=*/false);
 
-    addBooleanParameter(
-        Parameter::PROCESSOR_SCOPE, "stream_filtered", "Stream filtered",
+    OEC_ADD_BOOL(
+        "stream_filtered", "Stream filtered",
         "Publish a second copy of the incoming block tagged FILTERED_BLOCK. "
         "NOTE: this node does not filter - it forwards whatever the upstream "
         "chain already produced. Place a Bandpass Filter before OEconnect to "
         "make this meaningful, otherwise it duplicates the raw stream.",
         /*defaultValue=*/false, /*deactivateDuringAcquisition=*/false);
 
-    addBooleanParameter(
-        Parameter::PROCESSOR_SCOPE, "direct_board_trigger", "Direct board trigger",
+    OEC_ADD_BOOL(
+        "direct_board_trigger", "Direct board trigger",
         "In addition to the TTL event (always emitted), broadcast the Open Ephys "
         "acquisition board's remote-control command so the board fires the pulse "
         "itself, skipping the downstream output plugin's response time. Applies to "
@@ -89,8 +94,8 @@ void OEconnectJuceProcessor::registerParameters() {
         "understand the command ignore it, so this is harmless to leave on.",
         /*defaultValue=*/false, /*deactivateDuringAcquisition=*/false);
 
-    addStringParameter(
-        Parameter::PROCESSOR_SCOPE, "zmq_bind", "ZMQ bind address",
+    OEC_ADD_STRING(
+        "zmq_bind", "ZMQ bind address",
         "Interface the ZMQ sockets bind to. 127.0.0.1 keeps the data and "
         "control channels on this machine (no authentication needed). Any "
         "routable address (e.g. 0.0.0.0) exposes them to the network and is "
@@ -98,14 +103,14 @@ void OEconnectJuceProcessor::registerParameters() {
         "40-character CURVE key. Ignored when Transport is SharedMem.",
         "127.0.0.1", /*deactivateDuringAcquisition=*/true);
 
-    addIntParameter(
-        Parameter::PROCESSOR_SCOPE, "zmq_data_port", "ZMQ data port",
+    OEC_ADD_INT(
+        "zmq_data_port", "ZMQ data port",
         "TCP port for the outbound data stream (PUB socket). Bonsai subscribes "
         "here. Ignored when Transport is SharedMem.",
         5557, 1024, 65535, /*deactivateDuringAcquisition=*/true);
 
-    addIntParameter(
-        Parameter::PROCESSOR_SCOPE, "zmq_cmd_port", "ZMQ command port",
+    OEC_ADD_INT(
+        "zmq_cmd_port", "ZMQ command port",
         "TCP port for the inbound command channel (REP socket) carrying "
         "START_RECORD / TTL commands from Bonsai. Must differ from the data "
         "port. Ignored when Transport is SharedMem.",
@@ -220,7 +225,7 @@ bool OEconnectJuceProcessor::startAcquisition() {
      * corrupting data. See the plugin README "Observation-only mode" for the
      * workaround during firmware-upgrade windows. */
     if (board_ && !board_->meetsMinimumSdk()) {
-        AlertWindow::showMessageBoxAsync(MessageBoxIconType::WarningIcon,
+        AlertWindow::showMessageBoxAsync(OEC_WARNING_ICON,
             "OEconnect",
             "Board SDK '" + String(board_->sdkVersionString()) +
             "' is older than the minimum supported by this OEconnect release. " +

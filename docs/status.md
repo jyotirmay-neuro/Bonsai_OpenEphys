@@ -51,6 +51,18 @@ Last verified: 2026-07-08.
 | Transport / stream / ZMQ bind + ports | Working | Wired to the running configuration. |
 | Block size, slot size, slot count | **Not configurable** | Block size is dictated by OE's acquisition callback. Ring geometry is compile-time (64 KiB × 256 slots), despite what spec §4.7 implies. |
 
+## OE GUI compatibility
+
+| Capability | Status | Notes |
+|---|---|---|
+| GUI 1.0.x (plugin API v10) | Working | Default target; the vendored submodule. |
+| GUI 0.6.x (plugin API v8) | Working | Built and link-verified against a real v0.6.7 checkout via `Source/Compat/OECompat.h`. |
+| GUI 0.5.x / 0.4.x | **Not supported** | Predate `DataStream` and the `Parameter` class. See [oe-version-compatibility.md](oe-version-compatibility.md). |
+| Board support | Working, board-agnostic | No board-specific code. TTL is an event; a downstream output plugin drives hardware, so any board with an output companion works. |
+
+One DLL per plugin API version — the GUI hard-rejects a mismatch. `build-oe-plugin.ps1`
+emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
+
 ---
 
 ## Known gaps, in rough priority order
@@ -60,9 +72,9 @@ Last verified: 2026-07-08.
    easy now that the plugin owns a TTL event channel.
 2. **`FILTERED_BLOCK` is a passthrough.** Either filter in the plugin or rename
    the stream to reflect that it mirrors the upstream chain.
-3. **Only plugin API v10 (GUI 1.0.x) is built.** The GUI hard-rejects any plugin
-   whose `apiVersion` differs, so each supported GUI line needs its own binary.
-   0.6.x (API v8) is not yet built or verified.
+3. **Pre-0.6 GUI lines (0.4.x / 0.5.x) are unsupported.** They predate
+   `DataStream` and the `Parameter` class, on which this plugin is built.
+   See [oe-version-compatibility.md](oe-version-compatibility.md).
 4. **Ring geometry is not editor-configurable** even though the spec says it is.
 5. **`START_RECORD` prefix is ignored** by the plugin.
 

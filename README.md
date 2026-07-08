@@ -13,7 +13,8 @@ Bidirectional, low-latency bridge between the Open Ephys GUI and Bonsai-rx.
 > Continuous data streaming, recording control, clock sync and TTL output all work
 > end to end. TTL reaches hardware via OE's event bus plus a downstream output
 > plugin (board-agnostic). Spike and TTL-event *input* streams are not yet emitted
-> by the plugin. Only GUI 1.0.x (plugin API v10) is currently built.
+> by the plugin. Builds for OE GUI 1.0.x and 0.6.x — one DLL per plugin API version,
+> see [`docs/oe-version-compatibility.md`](docs/oe-version-compatibility.md).
 
 ## Quick start
 
@@ -106,6 +107,7 @@ dotnet test package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests -c Rele
 | Document | Purpose |
 |---|---|
 | [docs/status.md](docs/status.md) | **What actually works today.** Start here. |
+| [docs/oe-version-compatibility.md](docs/oe-version-compatibility.md) | Which OE GUI versions and boards are supported, and why |
 | [docs/configuration.md](docs/configuration.md) | Every option, compatibility matrix, troubleshooting |
 | [spec/oec-protocol-v1.md](spec/oec-protocol-v1.md) | Frozen wire protocol |
 | [docs/architecture-rules.md](docs/architecture-rules.md) | Non-negotiable design constraints |

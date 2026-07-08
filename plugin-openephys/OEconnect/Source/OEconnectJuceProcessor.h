@@ -10,6 +10,7 @@
 
 #include "OEconnectProcessor.h"
 #include "Boards/EventBusTtlAdapter.h"
+#include "Compat/OECompat.h"             /* plugin API v8 / v10 shim */
 #include "Util/SlowCmdWorker.h"
 #include "Util/PulseScheduler.h"
 #include <ProcessorHeaders.h>            /* from external/plugin-GUI */
@@ -30,10 +31,11 @@ public:
     bool startAcquisition() override;
     bool stopAcquisition() override;
 
-    /** Declares the editor-visible parameters. Each carries a displayName and a
-     *  description (shown as the control's tooltip) and is saved/restored with
-     *  the signal chain automatically. */
-    void registerParameters() override;
+    /** Declares the editor-visible parameters. Each carries a description (shown
+     *  as the control's tooltip) and is saved/restored with the signal chain.
+     *  Called from registerParameters() on API v10, from the constructor on v8. */
+    void registerOecParameters();
+    OEC_REGISTER_PARAMS_HOOK
 
     /** Pushes a changed parameter into cfg_. */
     void parameterValueChanged(Parameter* param) override;

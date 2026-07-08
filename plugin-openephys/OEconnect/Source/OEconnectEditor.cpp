@@ -1,4 +1,5 @@
 #include "OEconnectEditor.h"
+#include "Compat/OECompat.h"
 #include <cstdio>
 
 namespace oec::plugin {
@@ -11,20 +12,22 @@ OEconnectEditor::OEconnectEditor(GenericProcessor* p) : GenericEditor(p) {
     desiredWidth = 340;
 
     /* Parameter editors are built by the framework from the declarations in
-     * OEconnectJuceProcessor::registerParameters(); each shows its displayName
-     * and exposes its description as a tooltip on hover. */
-    addComboBoxParameterEditor(Parameter::PROCESSOR_SCOPE, "transport", 10, 28);
+     * OEconnectJuceProcessor::registerOecParameters(); each exposes its
+     * description as a tooltip on hover. The OEC_* spellings absorb the plugin
+     * API v8 / v10 differences (see Compat/OECompat.h). */
+    OEC_ADD_COMBO_EDITOR("transport", 10, 28);
 
-    addToggleParameterEditor(Parameter::PROCESSOR_SCOPE, "stream_raw", 170, 30);
-    addToggleParameterEditor(Parameter::PROCESSOR_SCOPE, "stream_filtered", 170, 52);
+    OEC_ADD_TOGGLE_EDITOR("stream_raw", 170, 30);
+    OEC_ADD_TOGGLE_EDITOR("stream_filtered", 170, 52);
+    OEC_ADD_TOGGLE_EDITOR("direct_board_trigger", 10, 56);
 
-    addTextBoxParameterEditor(Parameter::PROCESSOR_SCOPE, "zmq_bind", 10, 78);
-    addTextBoxParameterEditor(Parameter::PROCESSOR_SCOPE, "zmq_data_port", 150, 78);
-    addTextBoxParameterEditor(Parameter::PROCESSOR_SCOPE, "zmq_cmd_port", 245, 78);
+    OEC_ADD_TEXT_EDITOR("zmq_bind", 10, 92);
+    OEC_ADD_TEXT_EDITOR("zmq_data_port", 150, 92);
+    OEC_ADD_TEXT_EDITOR("zmq_cmd_port", 245, 92);
 
     status_.setText("idle", dontSendNotification);
     status_.setJustificationType(Justification::topLeft);
-    status_.setFont(FontOptions(12.0f));
+    status_.setFont(OEC_FONT(12.0f));
     addAndMakeVisible(status_);
 
     startTimerHz(2);
@@ -46,7 +49,7 @@ void OEconnectEditor::timerCallback() {
 void OEconnectEditor::resized() {
     GenericEditor::resized();
     auto area = getLocalBounds().reduced(6);
-    status_.setBounds(area.getX(), 122, area.getWidth(), 34);
+    status_.setBounds(area.getX(), 136, area.getWidth(), 34);
 }
 
 GenericEditor* createOEconnectEditor(OEconnectJuceProcessor* p) {

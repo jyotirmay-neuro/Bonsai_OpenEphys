@@ -55,5 +55,6 @@ package-bonsai/nupkg/
 build-plugin/
 build-libshared/
 build-fix/
-build-oe-plugin/
+build-oe-plugin*/
 dist/
+dist-oe-plugin/
