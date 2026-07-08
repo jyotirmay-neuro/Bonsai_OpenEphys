@@ -8,7 +8,11 @@
 
     <PackageId>Bonsai.OEconnect</PackageId>
     <Description>Bonsai-rx operators for OpenEphys streaming and control (OEconnect bridge).</Description>
-    <PackageTags>bonsai openephys neuroscience ephys closed-loop</PackageTags>
+    <!-- The "Bonsai" tag (capital B) is load-bearing: Bonsai's package manager
+         matches it case-sensitively to decide whether to register the assembly
+         under <AssemblyReferences> in Bonsai.config. With a lowercase tag the
+         package installs and resolves, but no operators appear in the toolbox. -->
+    <PackageTags>Bonsai Rx OpenEphys neuroscience ephys closed-loop</PackageTags>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <IncludeBuildOutput>true</IncludeBuildOutput>
     <!-- Bonsai.Dsp 2.8 only ships net4x; the net6 build pulls it via NU1701 fallback. -->

@@ -1,5 +1,10 @@
 #include "OEconnectJuceProcessor.h"
 
+/* Needed for the complete GenericEditor type: GenericProcessor.h only
+ * forward-declares it, so createEditor() below can't otherwise convert
+ * GenericEditor* -> AudioProcessorEditor*. */
+#include <EditorHeaders.h>
+
 #include "Boards/FileReaderAdapter.h"
 #include "Boards/RhdAcqBoardAdapter.h"
 #include "Boards/OnixAdapter.h"
@@ -44,7 +49,7 @@ namespace oec::plugin {
 /* Defined in OEconnectEditor.cpp (same namespace). Declared at namespace scope
  * so the call below binds to oec::plugin::createOEconnectEditor, not a
  * block-scope extern that would resolve to the global namespace. */
-AudioProcessorEditor* createOEconnectEditor(OEconnectJuceProcessor*);
+GenericEditor* createOEconnectEditor(OEconnectJuceProcessor*);
 
 OEconnectJuceProcessor::OEconnectJuceProcessor() : GenericProcessor("OEconnect") { OECDIAG("ctor done"); }
 OEconnectJuceProcessor::~OEconnectJuceProcessor() {
@@ -53,9 +58,13 @@ OEconnectJuceProcessor::~OEconnectJuceProcessor() {
 
 AudioProcessorEditor* OEconnectJuceProcessor::createEditor() {
     OECDIAG("createEditor enter");
-    auto* e = createOEconnectEditor(this);
+    /* GenericProcessor owns the editor through its `editor` unique_ptr, and
+     * getEditor() returns editor.get(). Returning a raw editor without storing
+     * it here left getEditor() == nullptr, so the GUI null-dereferenced as soon
+     * as the node was added to the signal chain (and the editor leaked). */
+    editor.reset(createOEconnectEditor(this));
     OECDIAG("createEditor exit");
-    return e;
+    return editor.get();
 }
 
 void OEconnectJuceProcessor::updateSettings() {

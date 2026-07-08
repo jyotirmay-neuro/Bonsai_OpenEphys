@@ -13,6 +13,7 @@ class OEconnectEditor final : public GenericEditor,
 {
 public:
     explicit OEconnectEditor(GenericProcessor* p);
+    ~OEconnectEditor() override;
     void timerCallback() override;
     void paint(Graphics& g) override;
     void resized() override;
@@ -32,6 +33,8 @@ private:
     Label       status_;
 };
 
-AudioProcessorEditor* createOEconnectEditor(OEconnectJuceProcessor* p);
+/* Returns GenericEditor* so the processor can take ownership via its
+ * std::unique_ptr<GenericEditor> editor member (see GenericProcessor). */
+GenericEditor* createOEconnectEditor(OEconnectJuceProcessor* p);
 
 }  // namespace oec::plugin
