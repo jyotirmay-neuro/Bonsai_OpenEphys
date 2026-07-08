@@ -88,12 +88,12 @@ Per-subsystem detail:
 ## Tests
 
 ```powershell
-# C core (33 tests)
+# C core (34 tests)
 cmake -S libshared/oeconnect -B libshared/oeconnect/build -DOEC_BUILD_TESTS=ON
 cmake --build libshared/oeconnect/build --config Release
 ctest --test-dir libshared/oeconnect/build -C Release --output-on-failure
 
-# Plugin (14 tests)
+# Plugin (16 tests)
 cmake -S plugin-openephys/OEconnect -B plugin-openephys/OEconnect/build -DOEC_PLUGIN_BUILD_TESTS=ON
 cmake --build plugin-openephys/OEconnect/build --config Release
 ctest --test-dir plugin-openephys/OEconnect/build -C Release --output-on-failure

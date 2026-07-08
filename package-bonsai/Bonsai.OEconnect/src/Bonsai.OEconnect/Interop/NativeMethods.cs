@@ -92,6 +92,7 @@ internal static class NativeMethods
     public struct OecSidecar
     {
         public int Pid;
+        public int NodeId;   /* OE processor node id; scopes the session */
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string ShmRegion;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string DataEvent;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string CmdEvent;
@@ -102,7 +103,7 @@ internal static class NativeMethods
     }
 
     [DllImport(Lib, EntryPoint = "oec_sidecar_read", CallingConvention = CallingConvention.Cdecl)]
-    public static extern OecStatus SidecarRead(int pid, out OecSidecar outSidecar);
+    public static extern OecStatus SidecarRead(int pid, int nodeId, out OecSidecar outSidecar);
 
     [DllImport(Lib, EntryPoint = "oec_sidecar_dir", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     public static extern OecStatus SidecarDir(

@@ -27,12 +27,15 @@ struct oec_shm {
     size_t mapped_size;
 };
 
-oec_status_t oec_shm_make_name(int pid, char *out_buf, size_t out_buf_len) {
+oec_status_t oec_shm_make_name(int pid, int node_id, char *out_buf, size_t out_buf_len) {
     if (!out_buf || out_buf_len < 64) return OEC_E_INVALID_ARG;
+    /* Scoped by node id as well as pid: several OEconnect processors can live in
+     * one GUI process, and each owns its own SPSC rings. Keying on pid alone made
+     * the second one attach to the first's region and become a second producer. */
 #if defined(_WIN32)
-    int n = snprintf(out_buf, out_buf_len, "Local\\oeconnect.%d.shm", pid);
+    int n = snprintf(out_buf, out_buf_len, "Local\\oeconnect.%d.%d.shm", pid, node_id);
 #else
-    int n = snprintf(out_buf, out_buf_len, "/oeconnect.%d.shm", pid);
+    int n = snprintf(out_buf, out_buf_len, "/oeconnect.%d.%d.shm", pid, node_id);
 #endif
     if (n < 0 || (size_t)n >= out_buf_len) return OEC_E_INVALID_ARG;
     return OEC_OK;

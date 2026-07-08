@@ -90,12 +90,16 @@ The resulting `OEconnect.dll` is self-contained: no `liboeconnect.dll` or
    [Acquisition Source] → [OEconnect]
    ```
 
-   To stream a filtered signal, insert a filter upstream — the plugin forwards
-   whatever reaches it, it does not filter:
+   To stream a filtered signal, insert a filter upstream and set **Stream label**
+   to `Filtered` — the plugin forwards whatever reaches it, it does not filter:
 
    ```
    [Acquisition Source] → [Bandpass Filter] → [OEconnect] → [Record Node]
    ```
+
+   For raw **and** filtered simultaneously, branch the chain and run two OEconnect
+   nodes (one labelled `Raw`, one `Filtered`). Each gets its own shared-memory
+   region, scoped by OE node id, so give each Bonsai source an explicit `Endpoint`.
 
 > The GUI hard-rejects a plugin whose API version differs from its own, and the
 > DLL imports JUCE symbols from the host executable. Load the `api-vN` build that
@@ -111,8 +115,8 @@ be unsafe) is locked while acquisition runs.
 | Control | Meaning |
 |---|---|
 | **Transport** | `Auto` / `SharedMem` (sub-ms, same machine) / `Zmq` (1–5 ms, cross-machine) |
-| **Stream raw** | Publish the broadband block each callback. On by default. |
-| **Stream filtered** | Publish a second copy tagged `FILTERED_BLOCK`. Off by default; only meaningful with an upstream filter. |
+| **Stream continuous** | Publish this node's incoming block each callback. On by default. |
+| **Stream label** | `Raw` or `Filtered` — which stream id to stamp on that block. The node does **not** filter; the label must describe where you placed it. |
 | **Stream spikes** | Republish OE's spike events. On by default. Needs a Spike Detector **upstream**. |
 | **Stream TTL events** | Republish OE's TTL edges (board digital inputs, upstream detectors). On by default. |
 | **Direct board trigger** | Also broadcast `ACQBOARD TRIGGER` so the board fires pulses itself. Off by default. Pulses only. |

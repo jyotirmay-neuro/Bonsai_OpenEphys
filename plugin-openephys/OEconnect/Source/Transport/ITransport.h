@@ -44,6 +44,10 @@ public:
     virtual const uint8_t* peekCmd(uint32_t* out_size) = 0;
     virtual void consumeCmd() = 0;
 
+    /** Record a frame the producer could not publish (e.g. it exceeds one ring
+     *  slot). Surfaces via totalDropped(); wait-free. */
+    virtual void noteDropped() = 0;
+
     /** Diagnostics. */
     virtual uint64_t totalDropped() const = 0;
     virtual std::string name() const = 0;

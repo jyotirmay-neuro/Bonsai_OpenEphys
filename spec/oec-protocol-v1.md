@@ -118,8 +118,13 @@ without waiting for the next RAW frame.
 ### 4.1 Region
 
 ```
-region name:   Local\oeconnect.<oe_pid>.shm                (Windows global ns)
-               /oeconnect.<oe_pid>.shm                     (POSIX shm_open)
+region name:   Local\oeconnect.<oe_pid>.<node_id>.shm      (Windows global ns)
+               /oeconnect.<oe_pid>.<node_id>.shm           (POSIX shm_open)
+
+               <node_id> is the OE processor's node id. One GUI process may host
+               several OEconnect processors (e.g. one publishing RAW_BLOCK, another
+               a filtered branch); each owns its own SPSC rings, so the region must
+               be scoped per node, not per process.
 
 layout (cache-line = 64 B):
 +0x0000  region_header        (4 KiB)
@@ -194,24 +199,32 @@ Plugin writes a sidecar JSON to a well-known dir on startup, deletes it on
 clean shutdown:
 
 ```
-%TEMP%\oeconnect\sessions\<oe_pid>.json    (Windows)
-/tmp/oeconnect/sessions/<oe_pid>.json      (POSIX)
+%TEMP%\oeconnect\sessions\<oe_pid>-<node_id>.json    (Windows)
+/tmp/oeconnect/sessions/<oe_pid>-<node_id>.json      (POSIX)
 
 {
   "pid": 18432,
-  "shm_region": "Local\\oeconnect.18432.shm",
-  "data_event":  "Local\\oeconnect.18432.data_evt",
-  "cmd_event":   "Local\\oeconnect.18432.cmd_evt",
+  "node_id": 101,
+  "shm_region": "Local\\oeconnect.18432.101.shm",
+  "data_event":  "Local\\oeconnect.18432.101.data_evt",
+  "cmd_event":   "Local\\oeconnect.18432.101.cmd_evt",
   "zmq_fallback_endpoint": "tcp://127.0.0.1:5557",
   "zmq_cmd_endpoint":      "tcp://127.0.0.1:5558",
-  "spec_version": "1.0",
+  "spec_version": "1.1",
   "started_unix_ns": 1717900000000000000
 }
 ```
 
+One sidecar per OEconnect processor, not per process. `node_id` is absent from
+files written by earlier producers; readers MUST default it to `0`.
+
 Bonsai source ops with empty `Endpoint` scan this directory, pick the newest
 live session (`producer_heartbeat_ns` fresh within 5 s), prefer shmem when
-same-OS, fall to ZMQ otherwise.
+same-OS, fall to ZMQ otherwise. With several OEconnect nodes in one chain,
+auto-discovery is ambiguous — give each Bonsai source an explicit `Endpoint`.
+
+> Naming and discovery are outside the frame layout (§2) and stream-id table
+> (§3), so changes here do not require a protocol version bump.
 
 ### 4.7 Sizing defaults (configurable from editor)
 

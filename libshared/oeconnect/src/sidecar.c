@@ -49,11 +49,11 @@ oec_status_t oec_sidecar_dir(char *out_buf, size_t out_buf_len) {
     return OEC_OK;
 }
 
-oec_status_t oec_sidecar_path(int pid, char *out_buf, size_t out_buf_len) {
+oec_status_t oec_sidecar_path(int pid, int node_id, char *out_buf, size_t out_buf_len) {
     if (!out_buf || out_buf_len < 64) return OEC_E_INVALID_ARG;
     char dir[256];
     if (oec_sidecar_dir(dir, sizeof(dir)) != OEC_OK) return OEC_E_SYSCALL;
-    int n = snprintf(out_buf, out_buf_len, "%s%c%d.json", dir, OEC_PATH_SEP, pid);
+    int n = snprintf(out_buf, out_buf_len, "%s%c%d-%d.json", dir, OEC_PATH_SEP, pid, node_id);
     if (n < 0 || (size_t)n >= out_buf_len) return OEC_E_INVALID_ARG;
     return OEC_OK;
 }
@@ -61,12 +61,13 @@ oec_status_t oec_sidecar_path(int pid, char *out_buf, size_t out_buf_len) {
 oec_status_t oec_sidecar_write(const oec_sidecar_t *s) {
     if (!s) return OEC_E_INVALID_ARG;
     char path[512];
-    if (oec_sidecar_path(s->pid, path, sizeof(path)) != OEC_OK) return OEC_E_SYSCALL;
+    if (oec_sidecar_path(s->pid, s->node_id, path, sizeof(path)) != OEC_OK) return OEC_E_SYSCALL;
     FILE *f = fopen(path, "wb");
     if (!f) return OEC_E_SYSCALL;
     fprintf(f,
         "{\n"
         "  \"pid\": %d,\n"
+        "  \"node_id\": %d,\n"
         "  \"shm_region\": \"%s\",\n"
         "  \"data_event\": \"%s\",\n"
         "  \"cmd_event\": \"%s\",\n"
@@ -75,7 +76,7 @@ oec_status_t oec_sidecar_write(const oec_sidecar_t *s) {
         "  \"spec_version\": \"%s\",\n"
         "  \"started_unix_ns\": %llu\n"
         "}\n",
-        s->pid, s->shm_region, s->data_event, s->cmd_event,
+        s->pid, s->node_id, s->shm_region, s->data_event, s->cmd_event,
         s->zmq_fallback_endpoint, s->zmq_cmd_endpoint,
         s->spec_version, (unsigned long long)s->started_unix_ns);
     fclose(f);
@@ -117,10 +118,10 @@ static int extract_int(const char *buf, const char *key, int *out) {
     return 0;
 }
 
-oec_status_t oec_sidecar_read(int pid, oec_sidecar_t *out) {
+oec_status_t oec_sidecar_read(int pid, int node_id, oec_sidecar_t *out) {
     if (!out) return OEC_E_INVALID_ARG;
     char path[512];
-    if (oec_sidecar_path(pid, path, sizeof(path)) != OEC_OK) return OEC_E_SYSCALL;
+    if (oec_sidecar_path(pid, node_id, path, sizeof(path)) != OEC_OK) return OEC_E_SYSCALL;
     FILE *f = fopen(path, "rb");
     if (!f) return OEC_E_NO_SESSION;
     fseek(f, 0, SEEK_END);
@@ -135,6 +136,7 @@ oec_status_t oec_sidecar_read(int pid, oec_sidecar_t *out) {
 
     memset(out, 0, sizeof(*out));
     if (extract_int(buf, "\"pid\"", &out->pid) != 0) { free(buf); return OEC_E_PARSE; }
+    extract_int(buf, "\"node_id\"", &out->node_id);   /* absent in spec v1.1 files */
     extract_string(buf, "\"shm_region\"",            out->shm_region,            sizeof(out->shm_region));
     extract_string(buf, "\"data_event\"",            out->data_event,            sizeof(out->data_event));
     extract_string(buf, "\"cmd_event\"",             out->cmd_event,             sizeof(out->cmd_event));
@@ -146,8 +148,8 @@ oec_status_t oec_sidecar_read(int pid, oec_sidecar_t *out) {
     return OEC_OK;
 }
 
-oec_status_t oec_sidecar_remove(int pid) {
+oec_status_t oec_sidecar_remove(int pid, int node_id) {
     char path[512];
-    if (oec_sidecar_path(pid, path, sizeof(path)) != OEC_OK) return OEC_E_SYSCALL;
+    if (oec_sidecar_path(pid, node_id, path, sizeof(path)) != OEC_OK) return OEC_E_SYSCALL;
     return remove(path) == 0 ? OEC_OK : OEC_E_SYSCALL;
 }

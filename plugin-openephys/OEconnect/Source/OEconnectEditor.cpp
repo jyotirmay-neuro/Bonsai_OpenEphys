@@ -16,12 +16,12 @@ OEconnectEditor::OEconnectEditor(GenericProcessor* p) : GenericEditor(p) {
      * description as a tooltip on hover. The OEC_* spellings absorb the plugin
      * API v8 / v10 differences (see Compat/OECompat.h). */
     OEC_ADD_COMBO_EDITOR("transport", 10, 28);
+    OEC_ADD_COMBO_EDITOR("stream_label", 10, 56);
 
-    OEC_ADD_TOGGLE_EDITOR("stream_raw", 170, 28);
-    OEC_ADD_TOGGLE_EDITOR("stream_filtered", 170, 48);
-    OEC_ADD_TOGGLE_EDITOR("stream_spikes", 170, 68);
-    OEC_ADD_TOGGLE_EDITOR("stream_ttl", 170, 88);
-    OEC_ADD_TOGGLE_EDITOR("direct_board_trigger", 10, 56);
+    OEC_ADD_TOGGLE_EDITOR("stream_continuous", 170, 28);
+    OEC_ADD_TOGGLE_EDITOR("stream_spikes", 170, 48);
+    OEC_ADD_TOGGLE_EDITOR("stream_ttl", 170, 68);
+    OEC_ADD_TOGGLE_EDITOR("direct_board_trigger", 170, 88);
 
     OEC_ADD_TEXT_EDITOR("zmq_bind", 10, 92);
     OEC_ADD_TEXT_EDITOR("zmq_data_port", 10, 116);

@@ -49,21 +49,37 @@ fall back to ZMQ if the region cannot be created.
 > If you need the sub-millisecond guarantee, you need `SharedMem`. ZMQ is a
 > soft-real-time tier and cannot meet a 1 ms budget.
 
-### Stream raw
+### Stream continuous
 
-Publish the unprocessed broadband block on every acquisition callback
-(`RAW_BLOCK`). This is what Bonsai's `RawSamples` node receives. **On by default** —
-turn it off only if you exclusively want the filtered stream.
+Publish this node's incoming continuous block on every acquisition callback.
+**On by default.** Turn it off to use OEconnect purely as an event/command bridge.
 
-### Stream filtered
+### Stream label — *locked during acquisition*
 
-Publish a second copy of the incoming block tagged `FILTERED_BLOCK`, received by
-Bonsai's `FilteredSamples`. **Off by default.**
+Which stream id to stamp on that block: `Raw` feeds Bonsai's `RawSamples`,
+`Filtered` feeds `FilteredSamples`.
 
-> **The plugin does not filter anything.** It forwards whatever the upstream OE
-> chain already produced. To get a genuinely filtered stream, put a **Bandpass
-> Filter** node *before* OEconnect in the OE signal chain. With no upstream
-> filter, this option merely duplicates the raw stream at double the bandwidth.
+> **The plugin does not filter, and it cannot see a raw copy.** It receives exactly
+> one buffer: whatever the upstream OE chain handed it. So this setting does not
+> *select* a signal — it *labels* the one signal this node sees. Put OEconnect
+> after a Bandpass Filter and label it `Filtered`; put it straight after the source
+> and label it `Raw`. Mislabelling silently hands Bonsai filtered data through
+> `RawSamples`.
+
+#### Getting raw **and** filtered at the same time
+
+Branch the OE chain and run two OEconnect nodes:
+
+```
+[Source] ─┬─────────────────────────► [OEconnect: Raw]
+          └─► [Bandpass Filter] ────► [OEconnect: Filtered]
+```
+
+Each node owns its own shared-memory region (scoped by OE node id), so they do not
+collide. Auto-discovery cannot tell them apart, so give each Bonsai source an
+**explicit `Endpoint`** — read the two `shm_region` values out of
+`%TEMP%\oeconnect\sessions\<pid>-<node_id>.json`. Each block's `source_id` in the
+subheader also carries the emitting node's id.
 
 ### Stream spikes
 
@@ -101,10 +117,19 @@ differ. Bonsai's endpoint string lists both: `tcp://host:5557|tcp://host:5558`.
 
 ### Status line
 
-Read-only, refreshed twice a second: the active transport, the detected board
-adapter, and the cumulative dropped-frame count. **Dropped frames climbing means
-Bonsai is not draining fast enough** — simplify the downstream workflow, or accept
-the loss (the plugin never blocks acquisition to wait for a consumer).
+Read-only, refreshed twice a second: the active transport, the detected board, and
+the cumulative dropped-frame count.
+
+Dropped frames climb for two different reasons:
+
+- **Bonsai is not draining fast enough** — the ring filled and the oldest slot was
+  evicted. Simplify the downstream workflow, or accept the loss (the plugin never
+  blocks acquisition to wait for a consumer).
+- **The block does not fit one ring slot.** A frame needs
+  `40 + n_channels x n_samples x 2` bytes and a slot is 64 KiB, so at the usual
+  32-sample block you are capped at **1023 channels**. Exceed it and *every* frame
+  is dropped: `DropCount` climbs while `FrameCount` stays at zero. Ring geometry is
+  currently compile-time, so the only remedy is fewer channels per OEconnect node.
 
 ---
 
@@ -137,8 +162,8 @@ Every node has an `Endpoint` property with identical semantics:
 
 | `Endpoint` | Behaviour |
 |------------|-----------|
-| *(empty — default)* | **Auto-discovery.** Scans `%TEMP%\oeconnect\sessions\` for the newest session and verifies its heartbeat is fresh. Use this unless you run several OE instances. |
-| `shm://Local\oeconnect.<pid>.shm` | Attach to a specific shared-memory region. Same machine only. |
+| *(empty — default)* | **Auto-discovery.** Scans `%TEMP%\oeconnect\sessions\` for the newest session and verifies its heartbeat is fresh. Ambiguous if several OEconnect nodes run in one chain. |
+| `shm://Local\oeconnect.<pid>.<node_id>.shm` | Attach to a specific shared-memory region. Same machine only. Required when several OEconnect nodes run in one chain. |
 | `tcp://host:5557\|tcp://host:5558` | Connect over ZMQ. Note the `\|` separating data and command endpoints — **both are required**. |
 
 All nodes sharing an endpoint share **one underlying connection** (reference
@@ -149,7 +174,7 @@ counted), so adding a second source node costs nothing.
 | Node | Emits | Status |
 |------|-------|--------|
 | `RawSamples` | One `RawBlock` per callback (32 samples ≈ 1.07 ms at 30 kHz) | **Working** |
-| `FilteredSamples` | `RawBlock` from the `FILTERED_BLOCK` stream | Working, but see *Stream filtered* above |
+| `FilteredSamples` | `RawBlock` from the `FILTERED_BLOCK` stream | Working — from an OEconnect node labelled `Filtered` (see *Stream label*) |
 | `SyncPoints` | One `SyncPoint` per second (sample index ↔ host clock) | **Working** |
 | `OpenEphysSession` | One `SessionStatus` per second (liveness, frame/drop counts) | **Working** |
 | `Spikes` | `SpikeEvent` | **Working** — needs a Spike Detector *upstream* of OEconnect |
@@ -232,7 +257,9 @@ watch:
 - `DropCount` at zero
 
 If `FrameCount` is stuck at 0, the plugin is not publishing — check that OE
-acquisition is actually running and that **Stream raw** is enabled.
+acquisition is running and **Stream continuous** is enabled. If `DropCount` is
+climbing while `FrameCount` stays at 0, your block exceeds one 64 KiB ring slot
+(see *Status line*).
 
 ---
 
@@ -251,7 +278,8 @@ Invalid combinations:
   Use `Zmq`.
 - Non-loopback bind **without** `OEC_ZMQ_CURVE_SECRET` — refused at startup.
 - Same port for data and commands — the second bind fails.
-- `FilteredSamples` with **Stream filtered** off — subscribes fine, emits nothing.
+- `FilteredSamples` with no OEconnect node labelled `Filtered` — subscribes fine, emits nothing.
+- Two OEconnect nodes plus empty `Endpoint` — auto-discovery picks one arbitrarily; set explicit endpoints.
 - `Spikes` with no Spike Detector **upstream** of OEconnect — never fires.
 - `SetTtl`/`PulseTtl` with no output plugin **downstream** — event is recorded, no physical line moves.
 

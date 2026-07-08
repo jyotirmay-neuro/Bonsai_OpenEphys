@@ -23,9 +23,9 @@ Last verified: 2026-07-08.
 | ZMQ transport | Working | PUB/SUB data + REQ/REP commands. Loopback by default; non-loopback requires CURVE. |
 | `SYNC` heartbeat | Working | 1 Hz on the data ring, carries clock frequency + sample rate. |
 | Drift correction | Working | 60-point least-squares fit; `SampleToHostTime` anchors it to UTC. |
-| Auto-discovery | Working | Sidecar JSON + shared-region heartbeat liveness check. |
+| Auto-discovery | Working | Sidecar JSON + shared-region heartbeat liveness check. One sidecar per OEconnect node (`<pid>-<node_id>.json`); with several nodes in a chain, give each Bonsai source an explicit `Endpoint`. |
 | Frame bounds validation | Working | Untrusted frames are length-checked before any copy. |
-| `FILTERED_BLOCK` publish | **Partial** | The plugin performs **no filtering**. It re-publishes the incoming block under a different stream id. Put a Bandpass Filter upstream of OEconnect for this to mean anything. Off by default. |
+| `FILTERED_BLOCK` publish | Working | The node publishes its input **once**, under the stream id chosen by the *Stream label* parameter (`Raw` or `Filtered`). It does not filter — the label must describe where you placed the node. For both streams, branch the chain and run two OEconnect nodes. |
 | `SPIKE` publish | Working | Republished from OE's event bus via `checkForEvents(true)` + `handleSpike()`. Requires an upstream Spike Detector/sorter — OEconnect does not detect spikes. Waveforms scaled to int16 ADC counts by each spike channel's `bitVolts`. |
 | `TTL_EVENT` publish | Working | Republished from OE's event bus via `checkForEvents()` + `handleTTLEvent()`. Covers board digital inputs and upstream event generators. |
 
@@ -72,15 +72,11 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 2. **Pre-0.6 GUI lines (0.4.x / 0.5.x) are unsupported.** They predate
    `DataStream` and the `Parameter` class, on which this plugin is built.
    See [oe-version-compatibility.md](oe-version-compatibility.md).
-3. **Ring geometry is not editor-configurable** even though the spec says it is,
-   and an oversized block is dropped *silently*. A slot is 64 KiB, so a block of
-   `n_channels x n_samples x 2 B + 40 B` larger than that is never published and
-   nothing is counted. At the default 32-sample block that caps you at 1023
-   channels; a source with larger blocks (e.g. Neuropixels) can exceed it outright.
-4. **Two OEconnect nodes in one GUI process collide.** The shared-memory region is
-   named `oeconnect.<pid>.shm`, so a second node attaches to the first's rings and
-   both become producers on an SPSC ring. Needed if you want raw *and* filtered
-   streams from one chain.
+3. **Ring geometry is not editor-configurable** even though spec §4.7 says it is.
+   A slot is 64 KiB, so a block needing `40 + n_channels x n_samples x 2` bytes
+   above that cannot be published — at the usual 32-sample block that caps you at
+   1023 channels. Such frames are now *counted* as drops rather than vanishing
+   silently, but the geometry still cannot be raised.
 
 ### Resolved
 
@@ -88,6 +84,11 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
   a `setTTLOutputBit` API to call; the correct mechanism is a TTL event plus a
   downstream output plugin, which works for every board with no board-specific code.
 - ~~TTL echo not recorded~~ — the event bus carries it to Record Nodes.
+- ~~Two OEconnect nodes collide on one shm region~~ — the region and sidecar are now
+  scoped by OE node id, so each node owns its own single-producer rings.
+- ~~`RAW_BLOCK` could carry filtered data~~ — one node now publishes its input once,
+  under an explicit *Stream label*.
+- ~~Oversized blocks vanished silently~~ — now counted via `ITransport::noteDropped()`.
 - ~~No `SPIKE` / `TTL_EVENT` emission~~ — both republished from OE's event bus.
   Also fixed a consumer bug: the spike parser sized the waveform from the ring
   *slot* size rather than the frame's `payload_len`.
@@ -96,8 +97,8 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 
 | Suite | Count | Covers |
 |---|---|---|
-| `libshared` (C) | 33 | Ring buffer SPSC + eviction, shared memory, frame codec, drift fit, sidecar |
-| Plugin (C++) | 14 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE frame emission |
+| `libshared` (C) | 34 | Ring buffer SPSC + eviction, shared memory (incl. per-node region naming), frame codec, drift fit, sidecar |
+| Plugin (C++) | 16 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE emission, stream labelling, oversize-drop accounting |
 | Bonsai (C#) | 10 | Interop, HELLO negotiation matrix, command builder, end-to-end shared-memory round trip against a synthetic producer |
 
 The end-to-end round trip drives a real synthetic producer over shared memory and

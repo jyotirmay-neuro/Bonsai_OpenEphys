@@ -29,12 +29,21 @@ std::string unique_name() {
 
 TEST(Shm, MakeNameProducesValidPattern) {
     char buf[64] = {0};
-    EXPECT_EQ(oec_shm_make_name(18432, buf, sizeof(buf)), OEC_OK);
+    EXPECT_EQ(oec_shm_make_name(18432, 7, buf, sizeof(buf)), OEC_OK);
 #if defined(_WIN32)
-    EXPECT_STREQ(buf, "Local\\oeconnect.18432.shm");
+    EXPECT_STREQ(buf, "Local\\oeconnect.18432.7.shm");
 #else
-    EXPECT_STREQ(buf, "/oeconnect.18432.shm");
+    EXPECT_STREQ(buf, "/oeconnect.18432.7.shm");
 #endif
+}
+
+/* Two OEconnect processors in one GUI process must not share a region: each owns
+ * single-producer rings, so a shared name would give a ring two producers. */
+TEST(Shm, DistinctNodesInSameProcessGetDistinctRegions) {
+    char a[64] = {0}, b[64] = {0};
+    ASSERT_EQ(oec_shm_make_name(18432, 1, a, sizeof(a)), OEC_OK);
+    ASSERT_EQ(oec_shm_make_name(18432, 2, b, sizeof(b)), OEC_OK);
+    EXPECT_STRNE(a, b);
 }
 
 TEST(Shm, CreateOpenRoundtrip) {

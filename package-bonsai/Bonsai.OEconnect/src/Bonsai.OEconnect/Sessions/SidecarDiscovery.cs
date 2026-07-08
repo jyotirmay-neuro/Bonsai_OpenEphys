@@ -14,7 +14,7 @@ internal static class SidecarDiscovery
         return dir;
     }
 
-    public record struct Sidecar(int Pid, string Shm, string Zmq, ulong StartedNs);
+    public record struct Sidecar(int Pid, int NodeId, string Shm, string Zmq, ulong StartedNs);
 
     /// <summary>
     /// Returns the sidecar with the newest start time. The sidecar is only a
@@ -23,6 +23,11 @@ internal static class SidecarDiscovery
     /// has run for more than a few seconds would otherwise look "dead"). Actual
     /// liveness is verified after connecting, via the shared-region
     /// <c>producer_heartbeat_ns</c> the producer refreshes ~1 Hz.
+    ///
+    /// One sidecar exists per OEconnect processor, not per GUI process. With
+    /// several OEconnect nodes in one signal chain (e.g. a raw branch and a
+    /// filtered branch) "newest" is arbitrary — give each Bonsai source an
+    /// explicit <c>Endpoint</c> instead of relying on auto-discovery.
     /// </summary>
     public static Sidecar? FindNewest(string dir)
     {
@@ -34,8 +39,11 @@ internal static class SidecarDiscovery
                 using var s = File.OpenRead(f);
                 using var doc = JsonDocument.Parse(s);
                 var root = doc.RootElement;
+                /* node_id is absent from sidecars written by earlier producers. */
+                var nodeId = root.TryGetProperty("node_id", out var n) ? n.GetInt32() : 0;
                 var sc = new Sidecar(
                     root.GetProperty("pid").GetInt32(),
+                    nodeId,
                     root.GetProperty("shm_region").GetString() ?? "",
                     root.GetProperty("zmq_fallback_endpoint").GetString() ?? "",
                     root.GetProperty("started_unix_ns").GetUInt64());

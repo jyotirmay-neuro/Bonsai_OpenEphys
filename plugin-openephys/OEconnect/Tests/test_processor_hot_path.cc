@@ -43,8 +43,8 @@ TEST(HotPath, ProcessBlockEmitsRawFrame) {
     ProcessorConfig cfg;
     cfg.num_channels = 4;
     cfg.block_size   = 8;
-    cfg.enable_raw = true;
-    cfg.enable_filtered = false;
+    cfg.enable_continuous = true;
+    cfg.continuous_stream_id = OEC_STREAM_RAW_BLOCK;
     cfg.enable_spikes   = false;
     cfg.enable_ttl      = false;
 
@@ -70,6 +70,87 @@ TEST(HotPath, ProcessBlockEmitsRawFrame) {
     EXPECT_EQ(sh->n_channels, 4);
     EXPECT_EQ(sh->n_samples, 8);
     EXPECT_EQ(sh->dtype, OEC_DTYPE_INT16);
+    oec_ringbuf_detach(rb);
+    oec_shm_close(h);
+
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
+/* The node publishes its input ONCE, under whichever stream id it is labelled
+ * with. Labelling it Filtered must not also emit a RAW_BLOCK carrying the same
+ * (already filtered) bytes. */
+TEST(HotPath, StreamLabelChoosesStreamIdAndEmitsExactlyOneFrame) {
+    ShmemTransport t;
+    std::string name = uniq() + ".label";
+    ASSERT_TRUE(t.start(name));
+
+    FileReaderAdapter board("ttl_out_log.csv");
+    AckOutbox outbox(64);
+
+    ProcessorConfig cfg;
+    cfg.num_channels = 2;
+    cfg.block_size   = 4;
+    cfg.enable_continuous = true;
+    cfg.continuous_stream_id = OEC_STREAM_FILTERED_BLOCK;
+    cfg.source_id = 42;
+    cfg.enable_spikes = cfg.enable_ttl = false;
+
+    std::vector<int16_t> input(cfg.num_channels * cfg.block_size, 7);
+    processBlock(input.data(), 0, cfg, t, board, outbox);
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+
+    uint32_t sz = 0;
+    const void* frame = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(frame, nullptr);
+    const auto* fh = (const oec_frame_header_t*)frame;
+    EXPECT_EQ(fh->stream_id, OEC_STREAM_FILTERED_BLOCK);
+    const auto* sh = (const oec_block_subheader_t*)((const uint8_t*)frame + sizeof(*fh));
+    EXPECT_EQ(sh->source_id, 42);
+
+    /* Exactly one frame: consume it and the ring must be empty. */
+    oec_ringbuf_consume(rb);
+    EXPECT_EQ(oec_ringbuf_peek(rb, &sz), nullptr);
+
+    oec_ringbuf_detach(rb);
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
+/* A block too large for one ring slot used to vanish with no diagnostic. */
+TEST(HotPath, OversizedBlockIsCountedAsDropped) {
+    ShmemTransport t;
+    std::string name = uniq() + ".oversize";
+    ASSERT_TRUE(t.start(name));
+
+    FileReaderAdapter board("ttl_out_log.csv");
+    AckOutbox outbox(64);
+
+    ProcessorConfig cfg;
+    /* 1024 ch x 64 samp x 2 B = 128 KiB payload, well over the 64 KiB slot. */
+    cfg.num_channels = 1024;
+    cfg.block_size   = 64;
+    cfg.enable_continuous = true;
+    cfg.enable_spikes = cfg.enable_ttl = false;
+
+    std::vector<int16_t> input((size_t)cfg.num_channels * cfg.block_size, 0);
+    ASSERT_EQ(t.totalDropped(), 0u);
+    processBlock(input.data(), 0, cfg, t, board, outbox);
+
+    EXPECT_EQ(t.totalDropped(), 1u) << "oversized frame must be counted, not silently dropped";
+
+    /* And nothing was published. */
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+    uint32_t sz = 0;
+    EXPECT_EQ(oec_ringbuf_peek(rb, &sz), nullptr);
     oec_ringbuf_detach(rb);
     oec_shm_close(h);
 
@@ -109,7 +190,8 @@ TEST(HotPath, SetTtlCommandFiresBoardAdapter) {
 
     ProcessorConfig cfg;
     cfg.num_channels = 1; cfg.block_size = 1;
-    cfg.enable_raw = cfg.enable_filtered = cfg.enable_spikes = cfg.enable_ttl = false;
+    cfg.enable_continuous = false;
+    cfg.enable_spikes = cfg.enable_ttl = false;
     std::vector<int16_t> dummy(1, 0);
     processBlock(dummy.data(), 0, cfg, t, board, outbox);
 
@@ -277,7 +359,8 @@ TEST(HotPath, SetTtlInvokesSyncMarkerCallback) {
     uint8_t observed_line = 0, observed_edge = 0;
     ProcessorConfig cfg;
     cfg.num_channels = 1; cfg.block_size = 1;
-    cfg.enable_raw = cfg.enable_filtered = cfg.enable_spikes = cfg.enable_ttl = false;
+    cfg.enable_continuous = false;
+    cfg.enable_spikes = cfg.enable_ttl = false;
     cfg.on_ttl_emit = [&](uint8_t line, uint8_t edge, uint64_t /*s*/) {
         ++callback_hits; observed_line = line; observed_edge = edge;
     };

@@ -27,6 +27,7 @@ public:
     const uint8_t* peekCmd(uint32_t* out_size) override;
     void consumeCmd() override;
 
+    void noteDropped() override { ++dropped_; }
     uint64_t totalDropped() const override { return dropped_; }
     std::string name() const override { return "SharedMem"; }
 

@@ -60,6 +60,7 @@ OEconnectJuceProcessor::~OEconnectJuceProcessor() {
 
 /* Categories must stay in sync with the switch in parameterValueChanged(). */
 static const juce::StringArray kTransportModes { "Auto", "SharedMem", "Zmq" };
+static const juce::StringArray kStreamLabels   { "Raw", "Filtered" };
 
 void OEconnectJuceProcessor::registerOecParameters() {
     OEC_ADD_CATEGORICAL(
@@ -71,18 +72,22 @@ void OEconnectJuceProcessor::registerOecParameters() {
         /*defaultIndex=*/0, /*deactivateDuringAcquisition=*/true);
 
     OEC_ADD_BOOL(
-        "stream_raw", "Stream raw",
-        "Publish the unprocessed broadband block each callback (stream id "
-        "RAW_BLOCK). This is what Bonsai's RawSamples node receives.",
+        "stream_continuous", "Stream continuous",
+        "Publish this node's incoming continuous block on every acquisition "
+        "callback. Turn off to use OEconnect purely as an event/command bridge.",
         /*defaultValue=*/true, /*deactivateDuringAcquisition=*/false);
 
-    OEC_ADD_BOOL(
-        "stream_filtered", "Stream filtered",
-        "Publish a second copy of the incoming block tagged FILTERED_BLOCK. "
-        "NOTE: this node does not filter - it forwards whatever the upstream "
-        "chain already produced. Place a Bandpass Filter before OEconnect to "
-        "make this meaningful, otherwise it duplicates the raw stream.",
-        /*defaultValue=*/false, /*deactivateDuringAcquisition=*/false);
+    OEC_ADD_CATEGORICAL(
+        "stream_label", "Stream label",
+        "Which stream id to stamp on this node's continuous block: Raw feeds "
+        "Bonsai's RawSamples, Filtered feeds FilteredSamples. This node sees only "
+        "what the upstream OE chain handed it - it does not filter - so the label "
+        "must describe where you placed it. To get BOTH in Bonsai, branch the OE "
+        "chain and use two OEconnect nodes: [Source]->[OEconnect: Raw] and "
+        "[Source]->[Bandpass]->[OEconnect: Filtered]. Each owns its own shared "
+        "memory region, so give each Bonsai source an explicit Endpoint.",
+        OEC_CATEGORIES(kStreamLabels),
+        /*defaultIndex=*/0, /*deactivateDuringAcquisition=*/true);
 
     OEC_ADD_BOOL(
         "stream_spikes", "Stream spikes",
@@ -156,10 +161,12 @@ void OEconnectJuceProcessor::parameterValueChanged(Parameter* param) {
         const int idx = (int)param->getValue();
         if (idx >= 0 && idx < kTransportModes.size())
             cfg_.transport_mode = kTransportModes[idx].toStdString();
-    } else if (name.equalsIgnoreCase("stream_raw")) {
-        cfg_.enable_raw = (bool)param->getValue();
-    } else if (name.equalsIgnoreCase("stream_filtered")) {
-        cfg_.enable_filtered = (bool)param->getValue();
+    } else if (name.equalsIgnoreCase("stream_continuous")) {
+        cfg_.enable_continuous = (bool)param->getValue();
+    } else if (name.equalsIgnoreCase("stream_label")) {
+        cfg_.continuous_stream_id = ((int)param->getValue() == 1)
+                                        ? OEC_STREAM_FILTERED_BLOCK
+                                        : OEC_STREAM_RAW_BLOCK;
     } else if (name.equalsIgnoreCase("stream_spikes")) {
         cfg_.enable_spikes = (bool)param->getValue();
     } else if (name.equalsIgnoreCase("stream_ttl")) {
@@ -190,6 +197,8 @@ void OEconnectJuceProcessor::updateSettings() {
     OECDIAG("updateSettings after getNumInputs");
     cfg_.sample_rate_hz = (getNumDataStreams() > 0) ? getSampleRate(0) : 30000.0;
     OECDIAG("updateSettings after getSampleRate");
+    /* Lets a consumer tell apart blocks from several OEconnect nodes. */
+    cfg_.source_id = (uint8_t)(getNodeId() & 0xFF);
 
     /* Publish a TTL event channel on the first incoming stream so downstream
      * plugins (Acq Board Output, Arduino Output, Pulse Pal, ...) and Record Nodes
@@ -226,7 +235,9 @@ void OEconnectJuceProcessor::selectTransport() {
         transport_->start(cfg_.zmq_endpoint);
     } else {   /* "Auto" and "SharedMem" both prefer shmem, fall back to ZMQ. */
         char name[64];
-        oec_shm_make_name((int)getpid(), name, sizeof(name));
+        /* Scoped by node id: several OEconnect processors can share a GUI process
+         * (raw on one branch, filtered on another) and each owns its own rings. */
+        oec_shm_make_name((int)getpid(), getNodeId(), name, sizeof(name));
         cfg_.shm_name = name;
         transport_ = std::make_unique<ShmemTransport>();
         if (!transport_->start(cfg_.shm_name)) {
@@ -348,6 +359,7 @@ bool OEconnectJuceProcessor::startAcquisition() {
     /* Write sidecar JSON */
     oec_sidecar_t s{};
     s.pid = (int)getpid();
+    s.node_id = getNodeId();
     std::strncpy(s.shm_region, cfg_.shm_name.c_str(), sizeof(s.shm_region) - 1);
     std::strncpy(s.zmq_fallback_endpoint, cfg_.zmq_endpoint.c_str(), sizeof(s.zmq_fallback_endpoint) - 1);
     std::strncpy(s.spec_version, "1.0", sizeof(s.spec_version) - 1);
@@ -360,7 +372,7 @@ bool OEconnectJuceProcessor::stopAcquisition() {
     if (drift_emitter_) drift_emitter_->stop();
     if (board_) board_->onStopAcquisition();
     if (transport_) transport_->stop();
-    oec_sidecar_remove((int)getpid());
+    oec_sidecar_remove((int)getpid(), getNodeId());
     return true;
 }
 

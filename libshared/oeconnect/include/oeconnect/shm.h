@@ -35,12 +35,16 @@ OEC_API oec_status_t oec_shm_unlink(const char *name);
 
 /*
  * Convenience helper used by the OE plugin on startup.
- * Builds the platform-correct name for the given PID, e.g.
- *   Windows: "Local\\oeconnect.<pid>.shm"
- *   POSIX:   "/oeconnect.<pid>.shm"
+ * Builds the platform-correct name for the given PID and processor node id, e.g.
+ *   Windows: "Local\\oeconnect.<pid>.<node_id>.shm"
+ *   POSIX:   "/oeconnect.<pid>.<node_id>.shm"
  * `out_buf` must be at least 64 bytes.
+ *
+ * The node id scopes the region: one GUI process can host several OEconnect
+ * processors (e.g. one publishing raw, another a filtered branch), and each must
+ * own its own single-producer rings.
  */
-OEC_API oec_status_t oec_shm_make_name(int pid, char *out_buf, size_t out_buf_len);
+OEC_API oec_status_t oec_shm_make_name(int pid, int node_id, char *out_buf, size_t out_buf_len);
 
 #ifdef __cplusplus
 }

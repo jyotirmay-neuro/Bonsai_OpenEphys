@@ -40,7 +40,14 @@ void writeRawBlock(ITransport& t, const ProcessorConfig& cfg,
     uint8_t* slot = t.acquireDataSlot(&cap, /*dropOldest=*/true);
     if (!slot) return;
     const size_t need = sizeof(oec_frame_header_t) + payload;
-    if (cap < need) return;
+    if (cap < need) {
+        /* The block does not fit one ring slot (n_channels x n_samples x 2 B + 40 B
+         * > slot_size). Returning silently here made the whole stream vanish with
+         * no diagnostic, so count it: the editor's dropped-frame readout and
+         * Bonsai's SessionStatus.DropCount are the only clues the user gets. */
+        t.noteDropped();
+        return;
+    }
 
     auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
     oec_frame_init(h, stream_id, payload, sample_index, qpc_now(), flags);
@@ -48,7 +55,7 @@ void writeRawBlock(ITransport& t, const ProcessorConfig& cfg,
     sh->n_channels = (uint16_t)cfg.num_channels;
     sh->n_samples  = (uint16_t)cfg.block_size;
     sh->dtype      = OEC_DTYPE_INT16;
-    sh->source_id  = 0;
+    sh->source_id  = cfg.source_id;
     sh->reserved   = 0;
     std::memcpy(slot + sizeof(*h) + sizeof(*sh), input,
                 (size_t)cfg.num_channels * cfg.block_size * sizeof(int16_t));
@@ -287,13 +294,12 @@ void processBlock(
     drainCmdRing(transport, board, cfg, sample_index, pulses);
     drainAckOutbox(transport, outbox);
 
-    if (cfg.enable_raw) {
+    /* One incoming buffer, one outgoing frame, stamped with whichever stream id
+     * the user labelled this node with. Publishing the same bytes twice under two
+     * stream ids would have mislabelled filtered data as RAW_BLOCK. */
+    if (cfg.enable_continuous) {
         writeRawBlock(transport, cfg, input, sample_index,
-                      OEC_STREAM_RAW_BLOCK, /*flags=*/0);
-    }
-    if (cfg.enable_filtered) {
-        writeRawBlock(transport, cfg, input, sample_index,
-                      OEC_STREAM_FILTERED_BLOCK, /*flags=*/0);
+                      cfg.continuous_stream_id, /*flags=*/0);
     }
 }
 

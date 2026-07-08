@@ -19,8 +19,18 @@ class PulseScheduler;    /* fwd; full def in Util/PulseScheduler.h */
  * Processor configuration owned by the editor (UI).
  */
 struct ProcessorConfig {
-    bool   enable_raw      = true;
-    bool   enable_filtered = false;
+    /* This node sees exactly one continuous buffer: whatever the upstream OE chain
+     * handed it. There is no second, unfiltered copy to publish. So the choice is
+     * not "raw and/or filtered" but "which stream id do I stamp on my input".
+     *
+     * To get both in Bonsai, branch the OE chain and run two OEconnect nodes:
+     *   [Source] -> [OEconnect: Raw]
+     *   [Source] -> [Bandpass] -> [OEconnect: Filtered]
+     * Each owns its own shared-memory region (scoped by node id). */
+    bool     enable_continuous    = true;
+    uint16_t continuous_stream_id = OEC_STREAM_RAW_BLOCK;  /* or OEC_STREAM_FILTERED_BLOCK */
+    uint8_t  source_id            = 0;  /* OE node id, stamped into the subheader */
+
     bool   enable_spikes   = true;
     bool   enable_ttl      = true;
     int    block_size      = 32;
