@@ -44,17 +44,17 @@ single connection.
 | Category | Operator | Purpose | Status |
 |---|---|---|---|
 | Source | `RawSamples` | Continuous broadband blocks | **Working** |
-| Source | `FilteredSamples` | The `FILTERED_BLOCK` stream | Working; the plugin forwards rather than filters, and it is off by default |
+| Source | `FilteredSamples` | The `FILTERED_BLOCK` stream | **Working** — from an OEconnect node whose *Stream label* is `Filtered` |
 | Source | `SyncPoints` | 1 Hz sample-index ↔ host-clock pairs | **Working** |
 | Source | `OpenEphysSession` | 1 Hz liveness / frame / drop counts | **Working** |
-| Source | `Spikes` | Spike events | **Never fires** — plugin emits no `SPIKE` frames |
-| Source | `TtlEvents` | TTL edges | **Never fires** — plugin emits no `TTL_EVENT` frames |
+| Source | `Spikes` | Spike events | **Working** — needs an upstream Spike Detector in the OE chain |
+| Source | `TtlEvents` | TTL edges | **Working** — board digital inputs + upstream event generators |
 | Transform | `ToMat` | `RawBlock` → OpenCV `Mat` (rows = channels) | **Working** |
 | Transform | `SampleToHostTime` | Drift-corrected `DateTimeOffset` per block | **Working** |
 | Sink | `StartRecording` | Start every OE Record Node | **Working** |
 | Sink | `StopRecording` | Stop recording; acquisition continues | **Working** |
-| Sink | `SetTtl` | Latch a TTL line high/low | Command round-trips, **no hardware effect yet** |
-| Sink | `PulseTtl` | Pulse a line, auto-clear after a width | Command round-trips, **no hardware effect yet** |
+| Sink | `SetTtl` | Latch a TTL line high/low | **Working** — needs a downstream output plugin |
+| Sink | `PulseTtl` | Pulse a line, auto-clear after a width | **Working** — output plugin, or *Direct board trigger* |
 
 ## Seeing your data
 
@@ -82,6 +82,12 @@ Add an `OpenEphysSession` node and watch:
 - `DropCount` — zero
 
 `FrameCount` stuck at 0 means the plugin is not publishing: confirm OE
-acquisition is running and **Stream raw** is enabled in the plugin editor.
+acquisition is running and **Stream continuous** is enabled in the plugin editor.
+
+> `DropCount` only counts frames whose `BIT_LOST_DATA` flag is set, and the plugin
+> never sets it — so drops are currently **invisible from Bonsai**. Read the
+> dropped-frame count off the OE editor's status line instead. In particular, a
+> block over ~1023 channels (at a 32-sample block) exceeds one 64 KiB ring slot and
+> every frame is dropped, while Bonsai just sees silence.
 
 See `examples/` for ready-to-run workflows.

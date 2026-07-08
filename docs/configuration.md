@@ -128,8 +128,14 @@ Dropped frames climb for two different reasons:
 - **The block does not fit one ring slot.** A frame needs
   `40 + n_channels x n_samples x 2` bytes and a slot is 64 KiB, so at the usual
   32-sample block you are capped at **1023 channels**. Exceed it and *every* frame
-  is dropped: `DropCount` climbs while `FrameCount` stays at zero. Ring geometry is
-  currently compile-time, so the only remedy is fewer channels per OEconnect node.
+  is dropped. Ring geometry is currently compile-time, so the only remedy is fewer
+  channels per OEconnect node.
+
+> This dropped-frame count lives in the **OE editor only**. The plugin never sets
+> the `BIT_LOST_DATA` header flag, and Bonsai's `SessionStatus.DropCount` counts
+> nothing else — so a drop is invisible from Bonsai. If Bonsai shows
+> `FrameCount = 0` and `DropCount = 0`, check the OE editor's readout before
+> concluding the plugin is idle. See [status.md](status.md).
 
 ---
 

@@ -25,6 +25,11 @@ Last verified: 2026-07-08.
 | Drift correction | Working | 60-point least-squares fit; `SampleToHostTime` anchors it to UTC. |
 | Auto-discovery | Working | Sidecar JSON + shared-region heartbeat liveness check. One sidecar per OEconnect node (`<pid>-<node_id>.json`); with several nodes in a chain, give each Bonsai source an explicit `Endpoint`. |
 | Frame bounds validation | Working | Untrusted frames are length-checked before any copy. |
+| `BIT_LOST_DATA` flag (§4.3) | **Missing** | The producer never sets it, so Bonsai's `SessionStatus.DropCount` always reads 0. Drops are visible only on the OE editor's status line. |
+| Frame magic/version check on receive (§2.6) | **Missing** | Neither side calls `oec_frame_validate()`. A frame with a plausible `stream_id` is parsed without checking `magic` or `version_major`. Payload bounds *are* checked, so this is a conformance gap rather than a memory-safety one. |
+| `BIT_CONTINUATION` multi-slot frames (§4.3) | **Missing** | Frames larger than one slot should span up to 4 slots, else `ERROR(FRAME_TOO_LARGE)`. Instead they are dropped and counted. |
+| `SYNC` `stream_meta[]` triples (§3.1) | **Missing** | `SYNC` carries `qpc_freq_hz` + `fpga_sample_rate_hz` only; the per-source `{source_id, n_channels, sample_rate}` array is not emitted. |
+| CRC-16 (§2.1, optional) | **Missing** | `oec_crc16()` exists and is unit-tested but is never computed or verified on the hot path. `crc16` is always 0, which the spec permits. |
 | `FILTERED_BLOCK` publish | Working | The node publishes its input **once**, under the stream id chosen by the *Stream label* parameter (`Raw` or `Filtered`). It does not filter — the label must describe where you placed the node. For both streams, branch the chain and run two OEconnect nodes. |
 | `SPIKE` publish | Working | Republished from OE's event bus via `checkForEvents(true)` + `handleSpike()`. Requires an upstream Spike Detector/sorter — OEconnect does not detect spikes. Waveforms scaled to int16 ADC counts by each spike channel's `bitVolts`. |
 | `TTL_EVENT` publish | Working | Republished from OE's event bus via `checkForEvents()` + `handleTTLEvent()`. Covers board digital inputs and upstream event generators. |
@@ -41,6 +46,11 @@ Last verified: 2026-07-08.
 | `SetTtl` / `PulseTtl` → TTL event | Working | Published on OE's event bus via `addTTLChannel()` + `setTTLState()`. Board-agnostic. |
 | TTL echo into the OE recording | Working | The same event is captured by any downstream Record Node, satisfying the "complete record" guarantee in [architecture-rules.md](architecture-rules.md). |
 | `SetTtl` / `PulseTtl` → physical line | Working, **requires a downstream output plugin** | The GUI has no cross-board API for driving a digital output directly (`setTTLOutputBit` does not exist). Place **Acq Board Output**, **Arduino Output**, or **Pulse Pal** downstream of OEconnect; it converts the event into a line. This is the same mechanism Crossing Detector and Ripple Detector use. |
+| Concurrent commands → `ACK(BUSY)` (§5.5) | **Missing** | Commands are not serialised per-sender; `BUSY` is never emitted. |
+| Drift divergence reset (§2.5) | **Missing** | Residual RMS > 5 us should reset the window and bump a telemetry counter; `oec_drift_residual_rms()` is never consulted. |
+| ZMQ CURVE on the **Bonsai** side (§5.7) | **Missing** | The plugin refuses an unauthenticated non-loopback bind, but `ZmqClient` cannot present a CURVE key — so the authenticated cross-machine path is **unusable end to end**. |
+| ZMQ `RCVHWM`, REQ heartbeat, disconnect `OnError` (§5.4/§5.6) | **Missing** | Not set on the Bonsai socket. |
+| Multi-`DataStream` sources | **Partial** | `process()` flattens every channel of every DataStream into one block using `buffer.getNumSamples()`. A source with several streams at different rates (e.g. Neuropixels AP + LFP) is mis-shaped. Should emit one block per stream, keyed by `source_id`. |
 | Direct board trigger | Working, opt-in | With the *Direct board trigger* parameter on, a **pulse** additionally broadcasts `ACQBOARD TRIGGER <line> <ms>`, so the acquisition board fires it without waiting on the downstream output plugin. Pulses only — the grammar cannot latch a line, so `SetTtl` always goes via the event bus. Boards that don't implement `handleBroadcastMessage()` ignore it. |
 
 ## Configuration
