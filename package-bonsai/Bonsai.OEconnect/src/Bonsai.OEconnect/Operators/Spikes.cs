@@ -7,11 +7,12 @@ namespace Bonsai.OEconnect.Operators;
 
 [Combinator]
 [Description(
-    "Streams spike events (threshold crossings or sorter output) from OpenEphys. " +
-    "NOT YET FUNCTIONAL: the plugin does not currently emit SPIKE frames, so this " +
-    "node subscribes successfully but never produces a value. Detect spikes in " +
-    "Bonsai from RawSamples until the plugin-side emitter lands. Waveform buffer " +
-    "would be valid only inside OnNext.")]
+    "Streams spike events flowing through the OEconnect node in the OpenEphys " +
+    "signal chain. OEconnect does not detect spikes itself - place a Spike " +
+    "Detector or sorter UPSTREAM of it, or this node never fires. Waveforms are " +
+    "int16 ADC counts (multiply by the channel's bitVolts for microvolts), " +
+    "channel-major, and ElectrodeId is the spike channel's global index. Requires " +
+    "\"Stream spikes\" enabled in the plugin editor (on by default).")]
 [WorkflowElementCategory(ElementCategory.Source)]
 public class Spikes : SessionSource<SpikeEvent>
 {

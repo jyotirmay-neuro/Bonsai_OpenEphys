@@ -4,9 +4,9 @@ How to set up the OpenEphys plugin and the Bonsai nodes, what every option means
 and which combinations are valid.
 
 Read this alongside [status.md](status.md), which records exactly which parts of
-the bridge are functional today. Several controls described here are wired and
-working; a few connect to code paths that are still stubs, and those are called
-out explicitly.
+the bridge are functional today. Every control described here is wired; where a
+feature depends on how you arrange the *OE signal chain* (spike detection, TTL
+output), that requirement is called out explicitly.
 
 ---
 
@@ -64,6 +64,25 @@ Bonsai's `FilteredSamples`. **Off by default.**
 > chain already produced. To get a genuinely filtered stream, put a **Bandpass
 > Filter** node *before* OEconnect in the OE signal chain. With no upstream
 > filter, this option merely duplicates the raw stream at double the bandwidth.
+
+### Stream spikes
+
+Republish spike events crossing this node as `SPIKE` frames (Bonsai's `Spikes`).
+**On by default.**
+
+> **OEconnect does not detect spikes.** It forwards what OE's event bus already
+> carries, so you need a **Spike Detector** (or sorter) *upstream* of OEconnect:
+> `[Source] → [Spike Detector] → [OEconnect]`. Without one this node never fires.
+> Waveforms arrive as int16 ADC counts, channel-major.
+
+### Stream TTL events
+
+Republish TTL edges crossing this node as `TTL_EVENT` frames (Bonsai's
+`TtlEvents`). Covers board digital inputs and any upstream event generator.
+**On by default.**
+
+Edges that OEconnect *itself* issues (`SetTtl` / `PulseTtl`) go downstream and into
+the recording, but are not echoed back through this node.
 
 ### ZMQ bind address — *locked during acquisition*
 
@@ -133,8 +152,8 @@ counted), so adding a second source node costs nothing.
 | `FilteredSamples` | `RawBlock` from the `FILTERED_BLOCK` stream | Working, but see *Stream filtered* above |
 | `SyncPoints` | One `SyncPoint` per second (sample index ↔ host clock) | **Working** |
 | `OpenEphysSession` | One `SessionStatus` per second (liveness, frame/drop counts) | **Working** |
-| `Spikes` | `SpikeEvent` | **Not functional** — the plugin never emits `SPIKE` frames |
-| `TtlEvents` | `TtlEvent` | **Not functional** — the plugin never emits `TTL_EVENT` frames |
+| `Spikes` | `SpikeEvent` | **Working** — needs a Spike Detector *upstream* of OEconnect |
+| `TtlEvents` | `TtlEvent` | **Working** — board digital inputs + upstream event generators |
 
 ### Transforms
 
@@ -233,6 +252,8 @@ Invalid combinations:
 - Non-loopback bind **without** `OEC_ZMQ_CURVE_SECRET` — refused at startup.
 - Same port for data and commands — the second bind fails.
 - `FilteredSamples` with **Stream filtered** off — subscribes fine, emits nothing.
+- `Spikes` with no Spike Detector **upstream** of OEconnect — never fires.
+- `SetTtl`/`PulseTtl` with no output plugin **downstream** — event is recorded, no physical line moves.
 
 ---
 

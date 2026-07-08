@@ -170,6 +170,78 @@ TEST(HotPath, HelloFrameRoundtripsThroughShmem) {
     oec_shm_unlink(name.c_str());
 }
 
+TEST(HotPath, TtlEventFrameRoundtripsThroughShmem) {
+    ShmemTransport t;
+    std::string name = uniq() + ".ttlevt";
+    ASSERT_TRUE(t.start(name));
+
+    writeTtlEventFrame(t, /*line=*/5, /*edge=*/1, /*board_id=*/0,
+                       /*sample_index=*/12345);
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+    uint32_t sz = 0;
+    const void* frame = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(frame, nullptr);
+
+    const auto* fh = (const oec_frame_header_t*)frame;
+    EXPECT_EQ(fh->stream_id, OEC_STREAM_TTL_EVENT);
+    EXPECT_EQ(fh->payload_len, 4u);
+    EXPECT_EQ(fh->sample_index, 12345u);
+    const uint8_t* body = (const uint8_t*)frame + sizeof(*fh);
+    EXPECT_EQ(body[0], 5);   /* line */
+    EXPECT_EQ(body[1], 1);   /* edge */
+    EXPECT_EQ(body[2], 0);   /* board_id */
+
+    oec_ringbuf_detach(rb);
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
+TEST(HotPath, SpikeFrameCarriesWaveformAndMetadata) {
+    ShmemTransport t;
+    std::string name = uniq() + ".spike";
+    ASSERT_TRUE(t.start(name));
+
+    const int16_t wf[8] = { 1, -2, 3, -4, 5, -6, 7, -8 };
+    writeSpikeFrame(t, /*electrode=*/7, /*unit=*/2, /*threshold=*/-42.5f,
+                    wf, /*n_samples=*/8, /*sample_index=*/999);
+
+    oec_shm_t* h = nullptr; void* mapped = nullptr; size_t msz = 0;
+    ASSERT_EQ(oec_shm_open(name.c_str(), 0, &h, &mapped, &msz), OEC_OK);
+    oec_ringbuf_t* rb = nullptr;
+    ASSERT_EQ(oec_ringbuf_attach(mapped, OEC_RING_DATA, &rb), OEC_OK);
+    uint32_t sz = 0;
+    const void* frame = oec_ringbuf_peek(rb, &sz);
+    ASSERT_NE(frame, nullptr);
+
+    const auto* fh = (const oec_frame_header_t*)frame;
+    EXPECT_EQ(fh->stream_id, OEC_STREAM_SPIKE);
+    EXPECT_EQ(fh->payload_len, 8u + 8u * sizeof(int16_t));
+    EXPECT_EQ(fh->sample_index, 999u);
+
+    const uint8_t* body = (const uint8_t*)frame + sizeof(*fh);
+    uint16_t electrode = 0, unit = 0; float thr = 0.f;
+    std::memcpy(&electrode, body + 0, 2);
+    std::memcpy(&unit, body + 2, 2);
+    std::memcpy(&thr, body + 4, 4);
+    EXPECT_EQ(electrode, 7);
+    EXPECT_EQ(unit, 2);
+    EXPECT_FLOAT_EQ(thr, -42.5f);
+
+    int16_t got[8] = {};
+    std::memcpy(got, body + 8, sizeof(got));
+    for (int i = 0; i < 8; ++i) EXPECT_EQ(got[i], wf[i]) << "sample " << i;
+
+    oec_ringbuf_detach(rb);
+    oec_shm_close(h);
+    t.stop();
+    oec_shm_unlink(name.c_str());
+}
+
 TEST(HotPath, SetTtlInvokesSyncMarkerCallback) {
     ShmemTransport t;
     std::string name = uniq() + ".marker";

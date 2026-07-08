@@ -5,8 +5,11 @@ publishes acquisition data to Bonsai over shared memory or ZeroMQ and executes
 commands coming back (start/stop recording, set/pulse TTL).
 
 See [`docs/status.md`](../../docs/status.md) for what is functional. In short:
-data publishing, recording control, clock sync and TTL output all work. `SPIKE`
-and `TTL_EVENT` frames are not emitted.
+data publishing, spike/TTL event republishing, recording control, clock sync and
+TTL output all work.
+
+Builds for OE GUI **1.0.x (plugin API v10)** and **0.6.x (v8)** — one DLL per API
+version, see [`docs/oe-version-compatibility.md`](../../docs/oe-version-compatibility.md).
 
 ## TTL output
 
@@ -42,8 +45,16 @@ git submodule update --init --recursive
 pwsh ./build-oe-plugin.ps1 -Config Release
 ```
 
-Output: `dist-oe-plugin/OEconnect.dll` (also copied into the GUI build's
-`plugins/` folder when present).
+Output: `dist-oe-plugin/api-v10/OEconnect.dll` (also copied into the GUI build's
+`plugins/` folder when present). The script reads `PLUGIN_API_VER` from whichever
+GUI you point it at and keys the output directory on it.
+
+To build for GUI 0.6.x instead, pass a 0.6 checkout:
+
+```powershell
+pwsh ./build-oe-plugin.ps1 -Config Release -GuiDir C:\src\plugin-GUI-0.6.7
+# -> dist-oe-plugin/api-v8/OEconnect.dll
+```
 
 The first run compiles the whole Open Ephys GUI and can take tens of minutes.
 Subsequent runs reuse the cached `open-ephys.lib` and only rebuild the plugin.
@@ -68,7 +79,8 @@ The resulting `OEconnect.dll` is self-contained: no `liboeconnect.dll` or
 
 ## Install
 
-1. Copy `dist-oe-plugin/OEconnect.dll` into the OE GUI `plugins` directory:
+1. Copy `dist-oe-plugin/api-v<N>/OEconnect.dll` — matching your GUI's plugin API
+   version — into the OE GUI `plugins` directory:
    - Windows: `C:\ProgramData\Open Ephys\plugins\`
      (for a portable/dev build, the `plugins\` folder beside `open-ephys.exe`)
 2. Restart the OE GUI. **OEconnect** appears under the *Sinks* category.
@@ -85,9 +97,10 @@ The resulting `OEconnect.dll` is self-contained: no `liboeconnect.dll` or
    [Acquisition Source] → [Bandpass Filter] → [OEconnect] → [Record Node]
    ```
 
-> The plugin must match the ABI of the GUI it was built against. Load it into
-> the GUI built from this repo's `external/plugin-GUI` submodule, not an
-> arbitrary release.
+> The GUI hard-rejects a plugin whose API version differs from its own, and the
+> DLL imports JUCE symbols from the host executable. Load the `api-vN` build that
+> matches your GUI. See
+> [`docs/oe-version-compatibility.md`](../../docs/oe-version-compatibility.md).
 
 ## Settings
 
@@ -100,6 +113,8 @@ be unsafe) is locked while acquisition runs.
 | **Transport** | `Auto` / `SharedMem` (sub-ms, same machine) / `Zmq` (1–5 ms, cross-machine) |
 | **Stream raw** | Publish the broadband block each callback. On by default. |
 | **Stream filtered** | Publish a second copy tagged `FILTERED_BLOCK`. Off by default; only meaningful with an upstream filter. |
+| **Stream spikes** | Republish OE's spike events. On by default. Needs a Spike Detector **upstream**. |
+| **Stream TTL events** | Republish OE's TTL edges (board digital inputs, upstream detectors). On by default. |
 | **Direct board trigger** | Also broadcast `ACQBOARD TRIGGER` so the board fires pulses itself. Off by default. Pulses only. |
 | **ZMQ bind address** | `127.0.0.1` by default. A routable address requires CURVE auth. |
 | **ZMQ data / command port** | `5557` / `5558`. Must differ. |

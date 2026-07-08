@@ -9,7 +9,7 @@ namespace oec::plugin {
 
 OEconnectEditor::OEconnectEditor(GenericProcessor* p) : GenericEditor(p) {
     OECDIAG("editor ctor enter");
-    desiredWidth = 340;
+    desiredWidth = 350;
 
     /* Parameter editors are built by the framework from the declarations in
      * OEconnectJuceProcessor::registerOecParameters(); each exposes its
@@ -17,13 +17,15 @@ OEconnectEditor::OEconnectEditor(GenericProcessor* p) : GenericEditor(p) {
      * API v8 / v10 differences (see Compat/OECompat.h). */
     OEC_ADD_COMBO_EDITOR("transport", 10, 28);
 
-    OEC_ADD_TOGGLE_EDITOR("stream_raw", 170, 30);
-    OEC_ADD_TOGGLE_EDITOR("stream_filtered", 170, 52);
+    OEC_ADD_TOGGLE_EDITOR("stream_raw", 170, 28);
+    OEC_ADD_TOGGLE_EDITOR("stream_filtered", 170, 48);
+    OEC_ADD_TOGGLE_EDITOR("stream_spikes", 170, 68);
+    OEC_ADD_TOGGLE_EDITOR("stream_ttl", 170, 88);
     OEC_ADD_TOGGLE_EDITOR("direct_board_trigger", 10, 56);
 
     OEC_ADD_TEXT_EDITOR("zmq_bind", 10, 92);
-    OEC_ADD_TEXT_EDITOR("zmq_data_port", 150, 92);
-    OEC_ADD_TEXT_EDITOR("zmq_cmd_port", 245, 92);
+    OEC_ADD_TEXT_EDITOR("zmq_data_port", 10, 116);
+    OEC_ADD_TEXT_EDITOR("zmq_cmd_port", 90, 116);
 
     status_.setText("idle", dontSendNotification);
     status_.setJustificationType(Justification::topLeft);
@@ -49,7 +51,7 @@ void OEconnectEditor::timerCallback() {
 void OEconnectEditor::resized() {
     GenericEditor::resized();
     auto area = getLocalBounds().reduced(6);
-    status_.setBounds(area.getX(), 136, area.getWidth(), 34);
+    status_.setBounds(area.getX(), 146, area.getWidth(), 34);
 }
 
 GenericEditor* createOEconnectEditor(OEconnectJuceProcessor* p) {

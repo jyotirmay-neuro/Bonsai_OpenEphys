@@ -234,7 +234,12 @@ public sealed class Session : IDisposable
          * product can overflow int and the copy can run past the mapped slot. */
         long elems = (long)sh.NumChannels * sh.NumSamples;
         long needBytes = elems * sizeof(short);
+        /* `len` is the ring SLOT size; the frame's real extent is PayloadLen.
+         * Bound by both so neither an oversized geometry nor a lying PayloadLen
+         * can read past the mapping. */
         long avail = (long)len - sizeof(OecFrameHeader) - sizeof(OecBlockSubheader);
+        long declared = (long)h.PayloadLen - sizeof(OecBlockSubheader);
+        if (declared >= 0 && declared < avail) avail = declared;
         if (elems < 0 || elems > int.MaxValue || needBytes > avail) return;
 
         var samples = new short[elems];
@@ -264,17 +269,30 @@ public sealed class Session : IDisposable
 
     private unsafe void DispatchSpike(in OecFrameHeader h, byte* p, int len)
     {
-        const int HEAD = 12; // electrode_u16 + unit_u16 + threshold_f32 + waveform_len_u32
-        if (len < sizeof(OecFrameHeader) + HEAD) return;
+        /* Body: electrode_u16 + unit_u16 + threshold_f32 + int16 waveform[n]. */
+        const int HEAD = 8;
+
+        /* `len` is the ring SLOT size, not the frame size, so the waveform length
+         * must come from the header's PayloadLen -- clamped to what we actually
+         * mapped, since PayloadLen arrives from an untrusted producer. */
+        int avail = len - sizeof(OecFrameHeader);
+        if (avail < HEAD) return;
+        int payload = h.PayloadLen <= (uint)avail ? (int)h.PayloadLen : avail;
+        if (payload < HEAD) return;
+
         byte* body = p + sizeof(OecFrameHeader);
         ushort electrode = *(ushort*)(body + 0);
         ushort unit = *(ushort*)(body + 2);
         float thr = *(float*)(body + 4);
-        int wfBytes = len - (sizeof(OecFrameHeader) + 8);
+
+        int wfBytes = (payload - HEAD) & ~1;          /* whole int16 samples only */
         var wf = new short[wfBytes / sizeof(short)];
-        fixed (short* dst = wf)
+        if (wfBytes > 0)
         {
-            Buffer.MemoryCopy(body + 8, dst, wf.Length * sizeof(short), wfBytes);
+            fixed (short* dst = wf)
+            {
+                Buffer.MemoryCopy(body + HEAD, dst, wfBytes, wfBytes);
+            }
         }
         SpikeSubject.OnNext(new SpikeEvent {
             SampleIndex = h.SampleIndex,

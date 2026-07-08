@@ -26,8 +26,8 @@ Last verified: 2026-07-08.
 | Auto-discovery | Working | Sidecar JSON + shared-region heartbeat liveness check. |
 | Frame bounds validation | Working | Untrusted frames are length-checked before any copy. |
 | `FILTERED_BLOCK` publish | **Partial** | The plugin performs **no filtering**. It re-publishes the incoming block under a different stream id. Put a Bandpass Filter upstream of OEconnect for this to mean anything. Off by default. |
-| `SPIKE` publish | **Missing** | The plugin never emits `SPIKE` frames. Bonsai's `Spikes` node subscribes but never fires. |
-| `TTL_EVENT` publish | **Missing** | The plugin never emits `TTL_EVENT` frames. Bonsai's `TtlEvents` node subscribes but never fires. |
+| `SPIKE` publish | Working | Republished from OE's event bus via `checkForEvents(true)` + `handleSpike()`. Requires an upstream Spike Detector/sorter — OEconnect does not detect spikes. Waveforms scaled to int16 ADC counts by each spike channel's `bitVolts`. |
+| `TTL_EVENT` publish | Working | Republished from OE's event bus via `checkForEvents()` + `handleTTLEvent()`. Covers board digital inputs and upstream event generators. |
 
 ## Control plane (Bonsai → OE)
 
@@ -67,16 +67,13 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
 
 ## Known gaps, in rough priority order
 
-1. **No `SPIKE` / `TTL_EVENT` emission.** Both Bonsai nodes exist and parse
-   correctly; the producer side is missing. `TtlEvents` in particular should be
-   easy now that the plugin owns a TTL event channel.
-2. **`FILTERED_BLOCK` is a passthrough.** Either filter in the plugin or rename
+1. **`FILTERED_BLOCK` is a passthrough.** Either filter in the plugin or rename
    the stream to reflect that it mirrors the upstream chain.
-3. **Pre-0.6 GUI lines (0.4.x / 0.5.x) are unsupported.** They predate
+2. **Pre-0.6 GUI lines (0.4.x / 0.5.x) are unsupported.** They predate
    `DataStream` and the `Parameter` class, on which this plugin is built.
    See [oe-version-compatibility.md](oe-version-compatibility.md).
-4. **Ring geometry is not editor-configurable** even though the spec says it is.
-5. **`START_RECORD` prefix is ignored** by the plugin.
+3. **Ring geometry is not editor-configurable** even though the spec says it is.
+4. **`START_RECORD` prefix is ignored** by the plugin.
 
 ### Resolved
 
@@ -84,13 +81,16 @@ emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
   a `setTTLOutputBit` API to call; the correct mechanism is a TTL event plus a
   downstream output plugin, which works for every board with no board-specific code.
 - ~~TTL echo not recorded~~ — the event bus carries it to Record Nodes.
+- ~~No `SPIKE` / `TTL_EVENT` emission~~ — both republished from OE's event bus.
+  Also fixed a consumer bug: the spike parser sized the waveform from the ring
+  *slot* size rather than the frame's `payload_len`.
 
 ## What is verified by tests
 
 | Suite | Count | Covers |
 |---|---|---|
 | `libshared` (C) | 33 | Ring buffer SPSC + eviction, shared memory, frame codec, drift fit, sidecar |
-| Plugin (C++) | 12 | Ack outbox, both transports, hot-path block emission, command drain |
+| Plugin (C++) | 14 | Ack outbox, both transports, hot-path block emission, command drain, TTL_EVENT + SPIKE frame emission |
 | Bonsai (C#) | 10 | Interop, HELLO negotiation matrix, command builder, end-to-end shared-memory round trip against a synthetic producer |
 
 The end-to-end round trip drives a real synthetic producer over shared memory and

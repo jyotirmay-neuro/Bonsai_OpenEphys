@@ -12,8 +12,8 @@ Bidirectional, low-latency bridge between the Open Ephys GUI and Bonsai-rx.
 > **Read [`docs/status.md`](docs/status.md) before relying on any capability.**
 > Continuous data streaming, recording control, clock sync and TTL output all work
 > end to end. TTL reaches hardware via OE's event bus plus a downstream output
-> plugin (board-agnostic). Spike and TTL-event *input* streams are not yet emitted
-> by the plugin. Builds for OE GUI 1.0.x and 0.6.x — one DLL per plugin API version,
+> plugin (board-agnostic). Spike and TTL-event streams are republished from OE's
+> event bus. Builds for OE GUI 1.0.x and 0.6.x — one DLL per plugin API version,
 > see [`docs/oe-version-compatibility.md`](docs/oe-version-compatibility.md).
 
 ## Quick start
@@ -93,7 +93,7 @@ cmake -S libshared/oeconnect -B libshared/oeconnect/build -DOEC_BUILD_TESTS=ON
 cmake --build libshared/oeconnect/build --config Release
 ctest --test-dir libshared/oeconnect/build -C Release --output-on-failure
 
-# Plugin (12 tests)
+# Plugin (14 tests)
 cmake -S plugin-openephys/OEconnect -B plugin-openephys/OEconnect/build -DOEC_PLUGIN_BUILD_TESTS=ON
 cmake --build plugin-openephys/OEconnect/build --config Release
 ctest --test-dir plugin-openephys/OEconnect/build -C Release --output-on-failure

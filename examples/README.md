@@ -8,13 +8,13 @@ installed (see [`docs/install.md`](../docs/install.md)).
 | `lfp_band_visualization.bonsai` | `RawSamples → ToMat`, visualize and write to disk | **Yes** |
 | `multi_subscriber_data_split.bonsai` | Several operators sharing one auto-discovered session | **Yes** |
 | `record_with_ttl_marker.bonsai` | Start OE recording from Bonsai; emit TTL markers every 5 s | **Yes** — markers land on OE's event bus; add an output plugin for a physical line |
-| `closed_loop_spike_triggered_stim.bonsai` | Threshold a unit, pulse TTL line 2 | **Partly** — TTL output works now; still depends on `Spikes`, which the plugin does not emit. Detect spikes from `RawSamples` in Bonsai instead. |
+| `closed_loop_spike_triggered_stim.bonsai` | Threshold a unit, pulse TTL line 2 | **Yes** — put a Spike Detector upstream of OEconnect in the OE chain, and an output plugin downstream |
 
-> Remaining caveats are tracked in [`docs/status.md`](../docs/status.md). TTL
-> output now works, but reaching a *physical* line needs an output plugin (Acq
-> Board Output / Arduino Output / Pulse Pal) downstream of OEconnect. The plugin
-> still emits no `SPIKE` frames, so workflows using the `Spikes` node load and run
-> without error — they simply never fire.
+> Remaining caveats are tracked in [`docs/status.md`](../docs/status.md). Two
+> things to get right in the OE signal chain: reaching a *physical* TTL line needs
+> an output plugin (Acq Board Output / Arduino Output / Pulse Pal) **downstream**
+> of OEconnect, and the `Spikes` node needs a Spike Detector **upstream** of it —
+> OEconnect forwards OE's event bus, it does not detect spikes itself.
 
 ## Starting point
 

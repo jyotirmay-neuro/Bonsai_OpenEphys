@@ -57,4 +57,23 @@ void processBlock(
     AckOutbox& outbox,
     PulseScheduler* pulses = nullptr);
 
+/**
+ * Publish one TTL_EVENT frame (spec §3.1: {line_u8, edge_u8, board_id_u8, _pad}).
+ * Wait-free; called from the audio thread while draining OE's event buffer.
+ */
+void writeTtlEventFrame(ITransport& transport,
+                        uint8_t line, uint8_t edge, uint8_t board_id,
+                        uint64_t sample_index);
+
+/**
+ * Publish one SPIKE frame (spec §3.1:
+ * {electrode_u16, unit_u16, threshold_f32, waveform_int16[n]}).
+ * `waveform` holds `n_samples` int16 ADC counts, channel-major.
+ * Wait-free; called from the audio thread.
+ */
+void writeSpikeFrame(ITransport& transport,
+                     uint16_t electrode, uint16_t unit, float threshold,
+                     const int16_t* waveform, uint32_t n_samples,
+                     uint64_t sample_index);
+
 }  // namespace oec::plugin

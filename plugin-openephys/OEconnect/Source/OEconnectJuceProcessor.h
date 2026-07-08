@@ -40,6 +40,11 @@ public:
     /** Pushes a changed parameter into cfg_. */
     void parameterValueChanged(Parameter* param) override;
 
+    /* Dispatched by checkForEvents() from process(), on the audio thread. Republish
+     * OE's event stream to Bonsai as TTL_EVENT / SPIKE frames. */
+    void handleTTLEvent(TTLEventPtr event) override;
+    void handleSpike(SpikePtr spike) override;
+
     /* --- ITtlEventEmitter. GenericProcessor::setTTLState and broadcastMessage
      *     are protected, so only this subclass can reach them. --- */
     void emitTtlEdge(int sample_in_block, int line, bool state) override {
@@ -77,6 +82,7 @@ private:
     AckOutbox                       outbox_{1024};
     std::atomic<uint64_t>           sample_counter_{0};
     std::vector<int16_t>            scratch_;
+    std::vector<int16_t>            spike_scratch_;   /* waveform float -> int16 */
     PulseScheduler                  pulse_sched_;
 };
 

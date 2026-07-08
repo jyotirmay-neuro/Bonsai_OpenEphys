@@ -222,6 +222,54 @@ void drainAckOutbox(ITransport& t, AckOutbox& outbox)
 
 }  // namespace
 
+void writeTtlEventFrame(ITransport& t,
+                        uint8_t line, uint8_t edge, uint8_t board_id,
+                        uint64_t sample_index)
+{
+    uint32_t cap = 0;
+    uint8_t* slot = t.acquireDataSlot(&cap, /*dropOldest=*/true);
+    if (!slot) return;
+
+    const uint8_t body[4] = { line, edge, board_id, 0 };
+    const size_t need = sizeof(oec_frame_header_t) + sizeof(body);
+    if (cap < need) return;
+
+    auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
+    oec_frame_init(h, OEC_STREAM_TTL_EVENT, (uint32_t)sizeof(body),
+                   sample_index, qpc_now(), 0);
+    std::memcpy(slot + sizeof(*h), body, sizeof(body));
+    t.publishData((uint32_t)need);
+}
+
+void writeSpikeFrame(ITransport& t,
+                     uint16_t electrode, uint16_t unit, float threshold,
+                     const int16_t* waveform, uint32_t n_samples,
+                     uint64_t sample_index)
+{
+    /* Body: electrode_u16 + unit_u16 + threshold_f32 + int16[n_samples]. */
+    constexpr size_t kSpikeHead = 2 + 2 + 4;
+    const size_t payload = kSpikeHead + (size_t)n_samples * sizeof(int16_t);
+    const size_t need = sizeof(oec_frame_header_t) + payload;
+
+    uint32_t cap = 0;
+    uint8_t* slot = t.acquireDataSlot(&cap, /*dropOldest=*/true);
+    if (!slot) return;
+    if (cap < need) return;   /* waveform too large for one slot; drop it */
+
+    auto* h = reinterpret_cast<oec_frame_header_t*>(slot);
+    oec_frame_init(h, OEC_STREAM_SPIKE, (uint32_t)payload,
+                   sample_index, qpc_now(), 0);
+
+    uint8_t* body = slot + sizeof(*h);
+    std::memcpy(body + 0, &electrode, 2);
+    std::memcpy(body + 2, &unit, 2);
+    std::memcpy(body + 4, &threshold, 4);
+    if (n_samples && waveform)
+        std::memcpy(body + kSpikeHead, waveform, (size_t)n_samples * sizeof(int16_t));
+
+    t.publishData((uint32_t)need);
+}
+
 void processBlock(
     const int16_t* input,
     uint64_t sample_index,

@@ -85,6 +85,21 @@ void OEconnectJuceProcessor::registerOecParameters() {
         /*defaultValue=*/false, /*deactivateDuringAcquisition=*/false);
 
     OEC_ADD_BOOL(
+        "stream_spikes", "Stream spikes",
+        "Republish spike events flowing through this point in the OE chain as "
+        "SPIKE frames (Bonsai's Spikes node). Requires an upstream Spike Detector "
+        "or sorter - OEconnect does not detect spikes itself, it forwards what OE "
+        "already produced.",
+        /*defaultValue=*/true, /*deactivateDuringAcquisition=*/false);
+
+    OEC_ADD_BOOL(
+        "stream_ttl", "Stream TTL events",
+        "Republish TTL edges flowing through this point in the OE chain as "
+        "TTL_EVENT frames (Bonsai's TtlEvents node). Covers board digital inputs "
+        "and upstream event generators.",
+        /*defaultValue=*/true, /*deactivateDuringAcquisition=*/false);
+
+    OEC_ADD_BOOL(
         "direct_board_trigger", "Direct board trigger",
         "In addition to the TTL event (always emitted), broadcast the Open Ephys "
         "acquisition board's remote-control command so the board fires the pulse "
@@ -145,6 +160,10 @@ void OEconnectJuceProcessor::parameterValueChanged(Parameter* param) {
         cfg_.enable_raw = (bool)param->getValue();
     } else if (name.equalsIgnoreCase("stream_filtered")) {
         cfg_.enable_filtered = (bool)param->getValue();
+    } else if (name.equalsIgnoreCase("stream_spikes")) {
+        cfg_.enable_spikes = (bool)param->getValue();
+    } else if (name.equalsIgnoreCase("stream_ttl")) {
+        cfg_.enable_ttl = (bool)param->getValue();
     } else if (name.equalsIgnoreCase("direct_board_trigger")) {
         if (ttl_adapter_) ttl_adapter_->setDirectTrigger((bool)param->getValue());
     } else if (name.equalsIgnoreCase("zmq_bind") ||
@@ -256,6 +275,10 @@ bool OEconnectJuceProcessor::startAcquisition() {
 
     if (board_) board_->onStartAcquisition(cfg_.block_size, cfg_.sample_rate_hz);
 
+    /* Pre-size the spike waveform buffer so handleSpike() never allocates on the
+     * audio thread. Generous: 4 channels x 64 samples covers tetrode defaults. */
+    spike_scratch_.resize(4 * 64);
+
     /* Emit one HELLO frame on the data ring so consumers can negotiate
      * protocol/version before any RAW frame arrives. Spec v1.1 §8.
      * v1.0 consumers route the unknown stream id through their default
@@ -332,7 +355,57 @@ bool OEconnectJuceProcessor::stopAcquisition() {
     return true;
 }
 
+void OEconnectJuceProcessor::handleTTLEvent(TTLEventPtr event) {
+    if (!cfg_.enable_ttl || !transport_ || event == nullptr) return;
+    writeTtlEventFrame(*transport_,
+                       (uint8_t)event->getLine(),
+                       (uint8_t)(event->getState() ? 1 : 0),
+                       /*board_id=*/0,
+                       (uint64_t)event->getSampleNumber());
+}
+
+void OEconnectJuceProcessor::handleSpike(SpikePtr spike) {
+    if (!cfg_.enable_spikes || !transport_ || spike == nullptr) return;
+
+    const SpikeChannel* info = spike->getChannelInfo();
+    if (!info) return;
+
+    const int n_chan = (int)info->getNumChannels();
+    const int n_samp = (int)info->getTotalSamples();
+    const size_t total = (size_t)n_chan * (size_t)n_samp;
+    if (total == 0) return;
+
+    /* OE hands us microvolts; ship int16 ADC counts like the continuous stream,
+     * scaling each channel by its own bitVolts. */
+    if (spike_scratch_.size() < total) spike_scratch_.resize(total);
+    const float* src = spike->getDataPointer();
+    if (!src) return;
+
+    for (int c = 0; c < n_chan; ++c) {
+        const float bv = info->getChannelBitVolts(c);
+        const float inv = (bv > 0.0f) ? (1.0f / bv) : 1.0f;
+        for (int s = 0; s < n_samp; ++s) {
+            float v = src[(size_t)c * n_samp + s] * inv;
+            if (v > 32767.f) v = 32767.f; else if (v < -32768.f) v = -32768.f;
+            spike_scratch_[(size_t)c * n_samp + s] = (int16_t)v;
+        }
+    }
+
+    writeSpikeFrame(*transport_,
+                    (uint16_t)info->getGlobalIndex(),
+                    spike->getSortedId(),
+                    spike->getThreshold(0),
+                    spike_scratch_.data(), (uint32_t)total,
+                    (uint64_t)spike->getSampleNumber());
+}
+
 void OEconnectJuceProcessor::process(AudioBuffer<float>& buffer) {
+    /* Dispatches incoming TTL events and spikes to handleTTLEvent/handleSpike.
+     * Done before we publish our own edges so a TTL we emit this block is not
+     * immediately re-read and echoed back to Bonsai. */
+    if (cfg_.enable_ttl || cfg_.enable_spikes)
+        checkForEvents(/*respondToSpikes=*/cfg_.enable_spikes);
+
     const int ch = buffer.getNumChannels();
     const int ns = buffer.getNumSamples();
     if (scratch_.size() < (size_t)(ch * ns)) scratch_.resize((size_t)(ch * ns));
