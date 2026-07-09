@@ -2,12 +2,30 @@
 
 Two artifacts, installed independently:
 
-| Artifact | Goes into | Built by |
-|---|---|---|
-| `OEconnect.dll` | The Open Ephys GUI `plugins` folder | `plugin-openephys/OEconnect/build-oe-plugin.ps1` |
-| `Bonsai.OEconnect.<version>.nupkg` | Bonsai, via a local package source | `dotnet pack` |
+| Artifact | Goes into |
+|---|---|
+| OE GUI plugin (`OEconnect.dll` / `.so` / `.dylib`) | The Open Ephys GUI `plugins` folder |
+| `Bonsai.OEconnect.<version>.nupkg` | Bonsai, via a local package source |
 
-Both are Windows x64. See the root [README](../README.md#build) for build commands.
+## Download prebuilt binaries
+
+Grab the latest release — no build toolchain required. These always point at the
+newest release:
+
+| Platform | OE GUI plugin (API v10 / GUI 1.0.x) |
+|---|---|
+| **Windows** x64 | [OEconnect-plugin-windows.zip](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/OEconnect-plugin-windows.zip) |
+| **Linux** x64 | [OEconnect-plugin-linux.zip](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/OEconnect-plugin-linux.zip) |
+| **macOS** | [OEconnect-plugin-macos.zip](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/OEconnect-plugin-macos.zip) |
+
+**Bonsai package (all OS):**
+[Bonsai.OEconnect.0.0.1.nupkg](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/Bonsai.OEconnect.0.0.1.nupkg)
+· or browse the [latest release](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest)
+
+Each plugin zip contains `api-v10/OEconnect.<ext>`. The `.nupkg` bundles the native
+`oeconnect` library for all three OS. Prebuilt binaries target **GUI 1.0.x (plugin
+API v10)**; for GUI 0.6.x, build from source (below). See the root
+[README](../README.md#build) for build commands.
 
 ---
 

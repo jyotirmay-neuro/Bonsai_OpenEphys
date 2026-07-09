@@ -18,10 +18,13 @@ Bidirectional, low-latency bridge between the Open Ephys GUI and Bonsai-rx.
 
 ## Quick start
 
-1. Build both halves — see [Build](#build).
-2. Copy `OEconnect.dll` into the OE GUI `plugins` folder, restart the GUI, and
-   drop the **OEconnect** sink into your signal chain, downstream of an
-   acquisition source.
+1. **Download prebuilt binaries** for Windows, Linux or macOS from the
+   [latest release](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest)
+   — no build toolchain needed. (Or [build from source](#build).) Full steps:
+   [`docs/install.md`](docs/install.md#download-prebuilt-binaries).
+2. Copy the OE plugin (`OEconnect.dll` / `.so` / `.dylib`) into the OE GUI
+   `plugins` folder, restart the GUI, and drop the **OEconnect** sink into your
+   signal chain, downstream of an acquisition source.
 3. Install `Bonsai.OEconnect.nupkg` into Bonsai — see [`docs/install.md`](docs/install.md).
 4. Start acquisition in OE. In Bonsai, build:
 
