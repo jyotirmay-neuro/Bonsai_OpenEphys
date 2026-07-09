@@ -73,7 +73,20 @@ Last verified: 2026-07-08.
 | Board support | Working, board-agnostic | No board-specific code. TTL is an event; a downstream output plugin drives hardware, so any board with an output companion works. |
 
 One DLL per plugin API version — the GUI hard-rejects a mismatch. `build-oe-plugin.ps1`
-emits `dist-oe-plugin/api-v<N>/OEconnect.dll`.
+(Windows) / `build-oe-plugin.sh` (Linux/macOS) emit `dist-oe-plugin/api-v<N>/OEconnect.<ext>`.
+
+## Prebuilt binaries (CI)
+
+GitHub Actions builds and tests all three components on **Windows, Linux and
+macOS** on every push (`.github/workflows/`), and a `v*` tag publishes a
+cross-OS release. The [latest release](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest)
+carries the loadable plugin (`OEconnect.dll` / `.so` / `.dylib`, API v10) for each
+OS plus the Bonsai `.nupkg`. See [install.md](install.md#download-prebuilt-binaries).
+
+Two POSIX-only bugs surfaced on the first real macOS/Linux CI run and were fixed:
+macOS caps `shm_open` names at 31 chars (shortened the test names; production names
+are already short), and `oe-gui-plugin/CMakeLists.txt` mixed keyword and plain
+`target_link_libraries` signatures on the POSIX branches.
 
 ---
 
