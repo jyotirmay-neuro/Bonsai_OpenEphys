@@ -58,3 +58,7 @@ build-fix/
 build-oe-plugin*/
 dist/
 dist-oe-plugin/
+
+# Local-only: project instructions and internal wire-protocol spec (untracked)
+CLAUDE.md
+/spec/
