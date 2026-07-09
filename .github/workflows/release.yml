@@ -19,7 +19,7 @@ jobs:
   protocol-compat:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Re-run drift check before any artifact is built
         run: bash ci/check-drift.sh
 
@@ -31,7 +31,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure
         run: cmake -S libshared/oeconnect -B build -DCMAKE_BUILD_TYPE=Release -DOEC_BUILD_TESTS=OFF
       - name: Build
@@ -45,7 +45,7 @@ jobs:
           cp build/liboeconnect.so     out/ 2>/dev/null || true
           cp build/liboeconnect.dylib  out/ 2>/dev/null || true
           cp build/Release/oeconnect.dll out/ 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: liboeconnect-${{ runner.os }}
           path: out/
@@ -60,7 +60,7 @@ jobs:
         os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -122,7 +122,7 @@ jobs:
           git clone --depth 1 --branch v0.6.7 --recurse-submodules https://github.com/open-ephys/plugin-GUI.git "$RUNNER_TEMP/plugin-GUI-v8"
           ./build-oe-plugin.sh --config Release --gui-dir "$RUNNER_TEMP/plugin-GUI-v8"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: OEconnect-plugin-${{ runner.os }}
           path: plugin-openephys/OEconnect/dist-oe-plugin/**
@@ -133,15 +133,15 @@ jobs:
     needs: build-libshared
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
             6.0.x
             8.0.x
             10.0.x
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts/
       - name: Stage runtimes
@@ -157,7 +157,7 @@ jobs:
         run: bash ci/promote-api.sh
       - name: Pack
         run: dotnet pack package-bonsai/Bonsai.OEconnect/src/Bonsai.OEconnect/Bonsai.OEconnect.csproj -c Release -o package-bonsai/nupkg
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Bonsai.OEconnect-nupkg
           path: package-bonsai/nupkg/
@@ -169,8 +169,8 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.publish }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts/
       - name: Bundle release assets
@@ -183,7 +183,7 @@ jobs:
           ls -la release/
       - name: Create GitHub release
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release/*
           generate_release_notes: true
