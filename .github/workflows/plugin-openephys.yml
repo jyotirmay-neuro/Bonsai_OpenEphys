@@ -1,10 +1,26 @@
 name: plugin-openephys
 
+# workflow_dispatch so it can be run on demand; also on pushes/PRs that touch the
+# plugin so regressions are caught. The heavy loadable-plugin job builds the whole
+# Open Ephys GUI, which is slow but free on a public repo.
 on:
-  workflow_dispatch:   # manual only (test-release phase: conserve Actions minutes)
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'plugin-openephys/**'
+      - 'libshared/**'
+      - '.github/workflows/plugin-openephys.yml'
+  pull_request:
+    paths:
+      - 'plugin-openephys/**'
+      - 'libshared/**'
+      - '.github/workflows/plugin-openephys.yml'
 
 jobs:
-  build:
+  # Fast: the pure hot-path unit tests. Builds liboeconnect + libzmq statically,
+  # no GUI. This is the top-level CMakeLists (tests only, no loadable plugin).
+  unit-tests:
     strategy:
       fail-fast: false
       matrix:
@@ -15,8 +31,59 @@ jobs:
         with:
           submodules: recursive
       - name: Configure
-        run: cmake -S plugin-openephys/OEconnect -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S plugin-openephys/OEconnect -B build -DCMAKE_BUILD_TYPE=Release -DOEC_PLUGIN_BUILD_TESTS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+  # Heavy: the actual loadable plugin, built the two-stage way (GUI -> plugin)
+  # against the vendored plugin-GUI (API v10). Produces the binary users install.
+  loadable-plugin:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-10 g++-10
+          chmod +x plugin-openephys/OEconnect/external/plugin-GUI/Resources/Scripts/install_linux_dependencies.sh
+          sudo plugin-openephys/OEconnect/external/plugin-GUI/Resources/Scripts/install_linux_dependencies.sh
+
+      - name: Build plugin (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: plugin-openephys/OEconnect
+        run: ./build-oe-plugin.ps1 -Config Release
+
+      - name: Build plugin (Linux)
+        if: runner.os == 'Linux'
+        working-directory: plugin-openephys/OEconnect
+        env:
+          CC: gcc-10
+          CXX: g++-10
+        run: |
+          chmod +x build-oe-plugin.sh
+          ./build-oe-plugin.sh --config Release
+
+      - name: Build plugin (macOS)
+        if: runner.os == 'macOS'
+        working-directory: plugin-openephys/OEconnect
+        run: |
+          chmod +x build-oe-plugin.sh
+          ./build-oe-plugin.sh --config Release
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: OEconnect-plugin-${{ runner.os }}
+          path: plugin-openephys/OEconnect/dist-oe-plugin/**
+          if-no-files-found: error

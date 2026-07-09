@@ -38,12 +38,26 @@ active-acquisition only, ignored by boards that don't implement
 
 Two stages: the GUI is built once to produce `open-ephys.lib` and generate
 `JuceHeader.h`, then the plugin is built against it. `build-oe-plugin.ps1`
-automates both.
+(Windows) and `build-oe-plugin.sh` (Linux / macOS) automate both.
 
 ```powershell
+# Windows
 git submodule update --init --recursive
 pwsh ./build-oe-plugin.ps1 -Config Release
 ```
+
+```bash
+# Linux / macOS
+git submodule update --init --recursive
+# Linux only: install the GUI's build dependencies
+sudo external/plugin-GUI/Resources/Scripts/install_linux_dependencies.sh
+./build-oe-plugin.sh --config Release
+```
+
+On Linux/macOS the plugin resolves JUCE symbols from the host GUI at load time,
+so stage 1 only needs to generate headers, not build the whole GUI. Prebuilt
+binaries for all three OS are produced by CI — see
+[`docs/install.md`](../../docs/install.md).
 
 Output: `dist-oe-plugin/api-v10/OEconnect.dll` (also copied into the GUI build's
 `plugins/` folder when present). The script reads `PLUGIN_API_VER` from whichever

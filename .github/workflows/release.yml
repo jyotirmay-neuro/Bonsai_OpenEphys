@@ -1,8 +1,16 @@
 name: release
 
+# Tag push builds and publishes a full cross-OS artifact set. workflow_dispatch
+# builds the same set without cutting a release, for dry runs.
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Create a GitHub release from the built artifacts'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -15,6 +23,7 @@ jobs:
       - name: Re-run drift check before any artifact is built
         run: bash ci/check-drift.sh
 
+  # Native liboeconnect for each OS, consumed by the Bonsai NuGet package.
   build-libshared:
     needs: protocol-compat
     strategy:
@@ -40,33 +49,57 @@ jobs:
         with:
           name: liboeconnect-${{ runner.os }}
           path: out/
+          if-no-files-found: error
 
+  # The loadable OE GUI plugin, built two-stage (GUI -> plugin) on each OS.
   build-plugin:
-    needs: build-libshared
+    needs: protocol-compat
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Configure
-        run: cmake -S plugin-openephys/OEconnect -B build -DCMAKE_BUILD_TYPE=Release -DOEC_PLUGIN_BUILD_TESTS=OFF
-      - name: Build
-        run: cmake --build build --config Release --parallel
-      - name: Stage bundle
-        shell: bash
+
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
         run: |
-          mkdir -p out
-          cp -r build/OEconnect.bundle      out/ 2>/dev/null || true
-          cp build/Release/OEconnect.dll    out/ 2>/dev/null || true
-          cp build/Release/OEconnect.dylib  out/ 2>/dev/null || true
+          sudo apt-get update
+          sudo apt-get install -y gcc-10 g++-10
+          chmod +x plugin-openephys/OEconnect/external/plugin-GUI/Resources/Scripts/install_linux_dependencies.sh
+          sudo plugin-openephys/OEconnect/external/plugin-GUI/Resources/Scripts/install_linux_dependencies.sh
+
+      - name: Build plugin (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: plugin-openephys/OEconnect
+        run: ./build-oe-plugin.ps1 -Config Release
+
+      - name: Build plugin (Linux)
+        if: runner.os == 'Linux'
+        working-directory: plugin-openephys/OEconnect
+        env: { CC: gcc-10, CXX: g++-10 }
+        run: |
+          chmod +x build-oe-plugin.sh
+          ./build-oe-plugin.sh --config Release
+
+      - name: Build plugin (macOS)
+        if: runner.os == 'macOS'
+        working-directory: plugin-openephys/OEconnect
+        run: |
+          chmod +x build-oe-plugin.sh
+          ./build-oe-plugin.sh --config Release
+
       - uses: actions/upload-artifact@v4
         with:
           name: OEconnect-plugin-${{ runner.os }}
-          path: out/
+          path: plugin-openephys/OEconnect/dist-oe-plugin/**
+          if-no-files-found: error
 
+  # Bonsai NuGet package with the native lib for all three OS embedded.
   pack-bonsai:
     needs: build-libshared
     runs-on: windows-latest
@@ -77,6 +110,7 @@ jobs:
           dotnet-version: |
             6.0.x
             8.0.x
+            10.0.x
       - name: Download native artifacts
         uses: actions/download-artifact@v4
         with:
@@ -85,11 +119,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path libshared/oeconnect/build/Release | Out-Null
-          # csproj packs win-x64 from build/Release/oeconnect.dll, and the POSIX
+          # csproj packs win-x64 from build/Release/oeconnect.dll and the POSIX
           # libs from the build root.
-          Copy-Item artifacts/liboeconnect-Windows/oeconnect.dll  libshared/oeconnect/build/Release/ -ErrorAction SilentlyContinue
-          Copy-Item artifacts/liboeconnect-Linux/liboeconnect.so   libshared/oeconnect/build/ -ErrorAction SilentlyContinue
-          Copy-Item artifacts/liboeconnect-macOS/liboeconnect.dylib libshared/oeconnect/build/ -ErrorAction SilentlyContinue
+          Copy-Item artifacts/liboeconnect-Windows/oeconnect.dll   libshared/oeconnect/build/Release/ -ErrorAction Stop
+          Copy-Item artifacts/liboeconnect-Linux/liboeconnect.so    libshared/oeconnect/build/ -ErrorAction Stop
+          Copy-Item artifacts/liboeconnect-macOS/liboeconnect.dylib libshared/oeconnect/build/ -ErrorAction Stop
       - name: Promote Unshipped -> Shipped
         run: bash ci/promote-api.sh
       - name: Pack
@@ -98,9 +132,12 @@ jobs:
         with:
           name: Bonsai.OEconnect-nupkg
           path: package-bonsai/nupkg/
+          if-no-files-found: error
 
   publish:
     needs: [build-plugin, pack-bonsai]
+    # Only on a tag push, or a manual run that opted in.
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.publish }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,20 +147,28 @@ jobs:
       - name: Bundle release assets
         run: |
           mkdir -p release
-          ( cd artifacts/OEconnect-plugin-Linux   && zip -r ../../release/OEconnect-linux.zip   . )
-          ( cd artifacts/OEconnect-plugin-Windows && zip -r ../../release/OEconnect-windows.zip . )
-          ( cd artifacts/OEconnect-plugin-macOS   && zip -r ../../release/OEconnect-macos.zip   . )
+          ( cd artifacts/OEconnect-plugin-Linux   && zip -r ../../release/OEconnect-plugin-linux.zip   . )
+          ( cd artifacts/OEconnect-plugin-Windows && zip -r ../../release/OEconnect-plugin-windows.zip . )
+          ( cd artifacts/OEconnect-plugin-macOS   && zip -r ../../release/OEconnect-plugin-macos.zip   . )
           cp artifacts/Bonsai.OEconnect-nupkg/*.nupkg release/
+          ls -la release/
       - name: Create GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
           generate_release_notes: true
           body_path: docs/release-notes/RELEASE_TEMPLATE.md
       - name: Publish to NuGet.org
-        run: |
-          for f in release/*.nupkg; do
-            dotnet nuget push "$f" -k "${{ secrets.NUGET_API_KEY }}" -s https://api.nuget.org/v3/index.json --skip-duplicate
-          done
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        continue-on-error: true   # a missing NUGET_API_KEY must not fail the release
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "NUGET_API_KEY not set; skipping NuGet publish."
+            exit 0
+          fi
+          for f in release/*.nupkg; do
+            dotnet nuget push "$f" -k "$NUGET_API_KEY" -s https://api.nuget.org/v3/index.json --skip-duplicate
+          done
