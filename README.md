@@ -47,7 +47,9 @@ crosses the plugin, so the OE recording stays the single source of truth. See
 The wire format is a frozen, authoritative v1 protocol that all three artifacts
 (`liboeconnect`, the OE plugin, the Bonsai package) conform to; the protocol
 version lives in `OEC_PROTOCOL_VERSION_{MAJOR,MINOR}` (`version.h`) and CI gates
-any drift in the frame/ring/shm/sidecar headers.
+any drift in the frame/ring/shm/sidecar headers. For the full walkthrough — frame
+layout, the lock-free rings, clock sync, and the ZMQ path — see
+[`docs/wire-protocol-explained.md`](docs/wire-protocol-explained.md).
 
 ## Repository layout
 
@@ -110,6 +112,7 @@ dotnet test package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests -c Rele
 | Document | Purpose |
 |---|---|
 | [docs/status.md](docs/status.md) | **What actually works today.** Start here. |
+| [docs/wire-protocol-explained.md](docs/wire-protocol-explained.md) | The wire protocol explained end to end — frame, rings, sync, ZMQ |
 | [docs/oe-version-compatibility.md](docs/oe-version-compatibility.md) | Which OE GUI versions and boards are supported, and why |
 | [docs/configuration.md](docs/configuration.md) | Every option, compatibility matrix, troubleshooting |
 | [docs/architecture-rules.md](docs/architecture-rules.md) | Non-negotiable design constraints |
