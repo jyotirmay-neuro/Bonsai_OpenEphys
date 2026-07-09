@@ -109,6 +109,9 @@ jobs:
         working-directory: plugin-openephys/OEconnect
         env: { CC: gcc-10, CXX: g++-10 }
         run: |
+          # 0.6.x uses JUCE 6, whose WebBrowser component needs webkit2gtk-4.0;
+          # the 1.0.x submodule (JUCE 8) uses 4.1, so this is the v8-only delta.
+          sudo apt-get install -y libwebkit2gtk-4.0-dev
           git clone --depth 1 --branch v0.6.7 --recurse-submodules https://github.com/open-ephys/plugin-GUI.git "$RUNNER_TEMP/plugin-GUI-v8"
           ./build-oe-plugin.sh --config Release --gui-dir "$RUNNER_TEMP/plugin-GUI-v8"
 
