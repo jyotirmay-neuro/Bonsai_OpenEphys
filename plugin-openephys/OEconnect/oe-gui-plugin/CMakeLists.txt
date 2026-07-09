@@ -99,12 +99,14 @@ if(MSVC)
   target_link_libraries(OEconnect PRIVATE ${OPEN_EPHYS_LIB})
   target_compile_options(OEconnect PRIVATE /sdl- /W0 /bigobj)
 elseif(LINUX OR (UNIX AND NOT APPLE))
-  target_link_libraries(OEconnect GL X11 Xext Xinerama asound dl freetype pthread rt)
+  # PRIVATE is required: the earlier target_link_libraries(OEconnect PRIVATE ...)
+  # used the keyword signature, and CMake forbids mixing it with the plain form.
+  target_link_libraries(OEconnect PRIVATE GL X11 Xext Xinerama asound dl freetype pthread rt)
   set_property(TARGET OEconnect APPEND_STRING PROPERTY LINK_FLAGS
     "-fvisibility=hidden -fPIC -rdynamic")
   target_compile_options(OEconnect PRIVATE -fPIC -rdynamic -O3)
 elseif(APPLE)
   set_property(TARGET OEconnect APPEND_STRING PROPERTY LINK_FLAGS
     "-fPIC -rdynamic -undefined dynamic_lookup")
-  target_link_libraries(OEconnect dl)
+  target_link_libraries(OEconnect PRIVATE dl)
 endif()
