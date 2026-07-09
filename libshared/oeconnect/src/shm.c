@@ -16,6 +16,16 @@
   #include <errno.h>
 #endif
 
+#if !defined(_WIN32)
+/* Emit the failing syscall + errno on the shm create path, which is always a
+ * genuine error worth surfacing (unlike the adopt-probe, which fails routinely).
+ * Cheap: only runs on the failure return. */
+#include <errno.h>
+#define OEC_SHM_DIAG(fmt, ...) \
+    fprintf(stderr, "[oeconnect] shm create: " fmt " failed: %s\n", \
+            __VA_ARGS__, strerror(errno))
+#endif
+
 struct oec_shm {
 #if defined(_WIN32)
     HANDLE mapping;
@@ -61,14 +71,23 @@ oec_status_t oec_shm_create(
     s->mapped_size = size_bytes;
     ZeroMemory(s->mapped, size_bytes);
 #else
+    /* macOS keeps POSIX shm objects around until shm_unlink; a stale one from a
+     * crashed prior run would make ftruncate() fail (objects can only be sized
+     * once). Unlink any leftover before creating, so create is always first-touch. */
+    if (truncate) shm_unlink(name);
     s->fd = shm_open(name, O_CREAT | O_RDWR, 0600);
-    if (s->fd < 0) { free(s); return OEC_E_SYSCALL; }
+    if (s->fd < 0) {
+        OEC_SHM_DIAG("shm_open(O_CREAT) '%s'", name);
+        free(s); return OEC_E_SYSCALL;
+    }
     if (truncate && ftruncate(s->fd, (off_t)size_bytes) < 0) {
+        OEC_SHM_DIAG("ftruncate %zu on '%s'", size_bytes, name);
         close(s->fd); free(s); return OEC_E_SYSCALL;
     }
     s->mapped = mmap(NULL, size_bytes, PROT_READ | PROT_WRITE,
                      MAP_SHARED, s->fd, 0);
     if (s->mapped == MAP_FAILED) {
+        OEC_SHM_DIAG("mmap %zu on '%s'", size_bytes, name);
         close(s->fd); free(s); return OEC_E_SYSCALL;
     }
     s->mapped_size = size_bytes;
