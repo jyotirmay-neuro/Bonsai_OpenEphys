@@ -17,7 +17,7 @@
 # See build-oe-plugin.ps1 (sibling) which automates both stages.
 
 cmake_minimum_required(VERSION 3.20)
-project(OEconnectOEPlugin LANGUAGES C CXX VERSION 0.0.1)
+project(OEconnectOEPlugin LANGUAGES C CXX VERSION 0.0.2)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

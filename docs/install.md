@@ -20,7 +20,7 @@ newest release:
 | **macOS** | [OEconnect-plugin-macos.zip](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/OEconnect-plugin-macos.zip) |
 
 **Bonsai package (all OS):**
-[Bonsai.OEconnect.0.0.1.nupkg](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/Bonsai.OEconnect.0.0.1.nupkg)
+[Bonsai.OEconnect.0.0.2.nupkg](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/Bonsai.OEconnect.0.0.2.nupkg)
 · or browse the [latest release](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest)
 
 ### Which variant do I install?
