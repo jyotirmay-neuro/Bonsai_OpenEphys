@@ -1,8 +1,8 @@
-3b6e1102b3e14ca06d54b5d2567950097791307262343d25a2727f2915903ee4  spec/oec-protocol-v1.md                                 v1.1
-1c702ac22f582ddd652ceb6081a4728089e17aaaf00a51bd820dc7a92f455931  libshared/oeconnect/include/oeconnect/frame.h           v1.1
-303ed13657691c253f3ee5c855f39a5d07f4790155cd5ec4526df4e45d44e344  libshared/oeconnect/include/oeconnect/ringbuf.h         v1.0
-5828783b1f4b78c1a96e85b2cb511897aed65351cb11bbd9c8f3a38dbf449f14  libshared/oeconnect/include/oeconnect/shm.h             v1.0
-b90b39968480124ac4cf06f56a697a47b7db633cba34ddf9555035344818f410  libshared/oeconnect/include/oeconnect/drift.h           v1.0
-0a269901ae283a22cec494cb6af8f5092a56eb0f823515490eb8d6db32085d7b  libshared/oeconnect/include/oeconnect/sidecar.h         v1.0
-c120aa077fd20f158b3916763d0d07813ba19ffae75654a31e22c919e9f639a2  libshared/oeconnect/include/oeconnect/hello.h           v1.1
-721f579e858f1c28e42a9a9875a654749750d45fd06e0b9deed5dd45fb4df637  libshared/oeconnect/include/oeconnect/version.h         v1.1
+b3df8711b3067f7067e9ab6c212f28317557dd9f0294b105e1d54853d0611e95  spec/oec-protocol-v1.md                                v1.1
+3309f47e71f76fbc773173bbbf75684364f301274756d812525947d2336ae722  libshared/oeconnect/include/oeconnect/frame.h          v1.1
+76cac4d7ccb16b10b6168e608b0fd6866aaac880c5404e8856bad99328ac04fb  libshared/oeconnect/include/oeconnect/ringbuf.h        v1.0
+7f2d9ed6ee2cb14e6c178c7660c190f544b6175c633e7577815e3d718ae457ee  libshared/oeconnect/include/oeconnect/shm.h            v1.0
+b90b39968480124ac4cf06f56a697a47b7db633cba34ddf9555035344818f410  libshared/oeconnect/include/oeconnect/drift.h          v1.0
+efcf8a42888e8b029b57f8fd8bc76eba8d7d7ba2a5bb052fbb345982fd235c00  libshared/oeconnect/include/oeconnect/sidecar.h        v1.0
+c120aa077fd20f158b3916763d0d07813ba19ffae75654a31e22c919e9f639a2  libshared/oeconnect/include/oeconnect/hello.h          v1.1
+721f579e858f1c28e42a9a9875a654749750d45fd06e0b9deed5dd45fb4df637  libshared/oeconnect/include/oeconnect/version.h        v1.1
