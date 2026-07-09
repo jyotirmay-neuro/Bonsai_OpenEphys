@@ -24,12 +24,18 @@ GUI build.
 `PLUGIN_API_VER` out of the GUI you point it at and writes to
 `dist-oe-plugin/api-v<N>/OEconnect.dll` so several can coexist.
 
+CI does exactly this for both supported lines: every release build produces
+`api-v10/` (from the submodule) **and** `api-v8/` (from a fresh plugin-GUI
+v0.6.7 checkout), and the one per-OS release zip ships both folders. Users pick
+the matching folder — see the variant table in
+[install.md](install.md#which-variant-do-i-install).
+
 ## Supported targets
 
 | GUI line | Plugin API | JUCE | Status |
 |---|---|---|---|
-| 1.0.x | v10 | 8 | **Built and tested.** The submodule default. |
-| 0.6.x | v8 | 6 | **Built.** Verified by compiling OEconnect against a real plugin-GUI v0.6.7 checkout through `Source/Compat/OECompat.h`. |
+| 1.0.x | v10 | 8 | **Built, tested, shipped.** The submodule default; `api-v10/` in every release zip. |
+| 0.6.x | v8 | 6 | **Built and shipped.** CI compiles OEconnect against a real plugin-GUI v0.6.7 checkout through `Source/Compat/OECompat.h`; `api-v8/` in every release zip. |
 | 0.5.x | older | — | **Not supported.** |
 | 0.4.x | older | — | **Not supported.** |
 

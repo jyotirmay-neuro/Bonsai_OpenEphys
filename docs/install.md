@@ -9,10 +9,11 @@ Two artifacts, installed independently:
 
 ## Download prebuilt binaries
 
-Grab the latest release — no build toolchain required. These always point at the
+Grab the latest release — no build toolchain required. One download per OS; each
+zip carries **both** supported GUI variants. These links always point at the
 newest release:
 
-| Platform | OE GUI plugin (API v10 / GUI 1.0.x) |
+| Platform | OE GUI plugin (all variants) |
 |---|---|
 | **Windows** x64 | [OEconnect-plugin-windows.zip](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/OEconnect-plugin-windows.zip) |
 | **Linux** x64 | [OEconnect-plugin-linux.zip](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/OEconnect-plugin-linux.zip) |
@@ -22,10 +23,25 @@ newest release:
 [Bonsai.OEconnect.0.0.1.nupkg](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest/download/Bonsai.OEconnect.0.0.1.nupkg)
 · or browse the [latest release](https://github.com/jyotirmay-neuro/Bonsai_OpenEphys/releases/latest)
 
-Each plugin zip contains `api-v10/OEconnect.<ext>`. The `.nupkg` bundles the native
-`oeconnect` library for all three OS. Prebuilt binaries target **GUI 1.0.x (plugin
-API v10)**; for GUI 0.6.x, build from source (below). See the root
-[README](../README.md#build) for build commands.
+### Which variant do I install?
+
+A plugin binary loads into exactly one GUI API version — the GUI's
+`PluginManager` rejects any mismatch (`Invalid Plugin API version` in the
+console, and the plugin silently does not appear). Each zip lays both variants
+out side by side; pick the folder that matches the GUI you run:
+
+| Your Open Ephys GUI | Plugin API | Use the file in the zip |
+|---|---|---|
+| **1.0.x** (current) | v10 | `api-v10/OEconnect.<ext>` |
+| **0.6.x** | v8 | `api-v8/OEconnect.<ext>` |
+| 0.5.x / 0.4.x and older | — | not supported — see [oe-version-compatibility.md](oe-version-compatibility.md) |
+
+`<ext>` is `dll` on Windows, `so` on Linux, `dylib` on macOS. Not sure of your
+GUI version? It is in the GUI's title bar and under **Help ▸ About**.
+
+The `.nupkg` bundles the native `oeconnect` library for all three OS and is the
+same regardless of GUI version. Full version rationale:
+[oe-version-compatibility.md](oe-version-compatibility.md).
 
 ---
 

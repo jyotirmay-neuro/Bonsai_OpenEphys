@@ -8,7 +8,8 @@ Linked **statically** into the OE plugin; consumed via **P/Invoke** by
 `Bonsai.OEconnect`, which ships a copy of the shared library inside its NuGet
 package.
 
-Authoritative wire format: [`spec/oec-protocol-v1.md`](../../spec/oec-protocol-v1.md).
+Authoritative wire format: the frozen OEconnect v1 protocol
+(`OEC_PROTOCOL_VERSION_{MAJOR,MINOR}` in `include/oeconnect/version.h`).
 
 ## Build
 

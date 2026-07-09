@@ -1,4 +1,3 @@
-b3df8711b3067f7067e9ab6c212f28317557dd9f0294b105e1d54853d0611e95  spec/oec-protocol-v1.md                                v1.1
 3309f47e71f76fbc773173bbbf75684364f301274756d812525947d2336ae722  libshared/oeconnect/include/oeconnect/frame.h          v1.1
 76cac4d7ccb16b10b6168e608b0fd6866aaac880c5404e8856bad99328ac04fb  libshared/oeconnect/include/oeconnect/ringbuf.h        v1.0
 7f2d9ed6ee2cb14e6c178c7660c190f544b6175c633e7577815e3d718ae457ee  libshared/oeconnect/include/oeconnect/shm.h            v1.0

@@ -44,14 +44,14 @@ never talks to acquisition-board firmware directly — every hardware action
 crosses the plugin, so the OE recording stays the single source of truth. See
 [`docs/architecture-rules.md`](docs/architecture-rules.md).
 
-The wire format is frozen and authoritative in
-[`spec/oec-protocol-v1.md`](spec/oec-protocol-v1.md). All three artifacts
-(`liboeconnect`, the OE plugin, the Bonsai package) conform to it.
+The wire format is a frozen, authoritative v1 protocol that all three artifacts
+(`liboeconnect`, the OE plugin, the Bonsai package) conform to; the protocol
+version lives in `OEC_PROTOCOL_VERSION_{MAJOR,MINOR}` (`version.h`) and CI gates
+any drift in the frame/ring/shm/sidecar headers.
 
 ## Repository layout
 
 ```
-spec/                              ← wire-protocol spec (authoritative)
 libshared/oeconnect/               ← C ABI shared library (frames, rings, drift)
 plugin-openephys/OEconnect/        ← C++/JUCE plugin for the OE GUI
 package-bonsai/Bonsai.OEconnect/   ← .NET Bonsai package
@@ -112,7 +112,6 @@ dotnet test package-bonsai/Bonsai.OEconnect/tests/Bonsai.OEconnect.Tests -c Rele
 | [docs/status.md](docs/status.md) | **What actually works today.** Start here. |
 | [docs/oe-version-compatibility.md](docs/oe-version-compatibility.md) | Which OE GUI versions and boards are supported, and why |
 | [docs/configuration.md](docs/configuration.md) | Every option, compatibility matrix, troubleshooting |
-| [spec/oec-protocol-v1.md](spec/oec-protocol-v1.md) | Frozen wire protocol |
 | [docs/architecture-rules.md](docs/architecture-rules.md) | Non-negotiable design constraints |
 | [docs/compat-policy.md](docs/compat-policy.md) | Versioning and compatibility policy |
 | [docs/perf/closed_loop_latency.md](docs/perf/closed_loop_latency.md) | Latency measurement procedure |
