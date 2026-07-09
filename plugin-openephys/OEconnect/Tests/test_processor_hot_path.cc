@@ -28,7 +28,9 @@ std::string uniq() {
 #if defined(_WIN32)
     return std::string("Local\\oeconnect.test.hot.") + std::to_string(::GetCurrentProcessId());
 #else
-    return std::string("/oeconnect.test.hot.") + std::to_string(getpid());
+    /* macOS caps shm_open names at 31 chars (PSHMNAMLEN), so keep the POSIX name
+     * short: "/oec.h.<pid>" plus a suffix stays well under the limit. */
+    return std::string("/oec.h.") + std::to_string(getpid());
 #endif
 }
 }

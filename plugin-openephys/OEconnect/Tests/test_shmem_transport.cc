@@ -27,8 +27,9 @@ std::string unique_name() {
     return std::string("Local\\oeconnect.test.transport.") +
            std::to_string(::GetCurrentProcessId());
 #else
-    return std::string("/oeconnect.test.transport.") +
-           std::to_string(getpid());
+    /* macOS caps shm_open names at 31 chars (PSHMNAMLEN); keep the POSIX name
+     * short so "<name>.roundtrip" still fits. */
+    return std::string("/oec.t.") + std::to_string(getpid());
 #endif
 }
 }  // namespace
